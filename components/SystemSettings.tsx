@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw, Fingerprint } from 'lucide-react';
 import { dataService } from '../services/dataService';
-import { USE_CLOUD_DB } from '../firebaseConfig';
+import { USE_CLOUD_DB, firebaseConfig } from '../firebaseConfig';
 
 interface SystemSettingsProps {
   currentLogo: string | null;
@@ -47,19 +47,28 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
   };
 
   const handleSeedData = async () => {
-    if (!confirm("Esto cargará los datos de prueba (Gerencia, Usuarios) en la base de datos de la nube. Si ya existen datos, se sobrescribirán los que tengan el mismo ID. ¿Continuar?")) return;
+    if (!confirm(`Se enviarán datos al proyecto "${firebaseConfig.projectId}". ¿Continuar?`)) return;
     
     setIsSyncing(true);
+    setMessage(null); // Clear previous messages
     try {
       await dataService.seedInitialData();
-      setMessage('✅ Datos sincronizados con la Nube exitosamente.');
+      setMessage('✅ ¡Éxito! Datos sincronizados con Firebase Cloud.');
+      alert(`Sincronización completada en proyecto: ${firebaseConfig.projectId}.\n\nSi no ves los datos, verifica que estés mirando el proyecto correcto en la consola de Firebase.`);
     } catch (error: any) {
-      console.error(error);
-      if (error.code === 'permission-denied') {
-        setMessage('❌ Error: Permiso denegado. Revisa las "Reglas" en Firebase Console.');
+      console.error("Error detallado:", error);
+      let errorMsg = 'Error desconocido.';
+      
+      if (error.code === 'permission-denied' || (error.message && error.message.includes('permission'))) {
+        errorMsg = 'PERMISO DENEGADO: Ve a Firebase Console -> Firestore -> Reglas y cámbialas a "allow read, write: if true;"';
+      } else if (error.code === 'not-found' || (error.message && error.message.includes('not found'))) {
+        errorMsg = 'BASE DE DATOS NO ENCONTRADA: Ve a Firebase Console y crea la base de datos Firestore.';
       } else {
-        setMessage('❌ Error al sincronizar: ' + error.message);
+        errorMsg = `Error técnico: ${error.message || JSON.stringify(error)}`;
       }
+      
+      setMessage(`❌ ${errorMsg}`);
+      alert(errorMsg); // Force user to see the error
     } finally {
       setIsSyncing(false);
     }
@@ -85,7 +94,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
           ) : (
              <AlertTriangle className="text-amber-600 mr-3 mt-0.5" />
           )}
-          <div>
+          <div className="w-full">
             <h4 className={`font-bold text-sm ${USE_CLOUD_DB ? 'text-green-800' : 'text-amber-800'}`}>
               {USE_CLOUD_DB ? 'Conectado a Firebase Cloud' : 'Modo Local (Sin Nube)'}
             </h4>
@@ -94,6 +103,14 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
                 ? 'Los datos se guardan en tiempo real en los servidores de Google.' 
                 : 'Los datos solo viven en este navegador. Activa Firebase para persistencia.'}
             </p>
+            
+            {/* Project ID Debugger */}
+            {USE_CLOUD_DB && (
+              <div className="mt-3 flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
+                <Fingerprint size={14} className="mr-2 opacity-50" />
+                ID del Proyecto: <strong>{firebaseConfig.projectId}</strong>
+              </div>
+            )}
           </div>
         </div>
 
@@ -113,13 +130,13 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
               }`}
             >
               <RefreshCw size={18} className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Sincronizando...' : 'Cargar Datos Iniciales a la Nube'}
+              {isSyncing ? 'Sincronizando...' : `Cargar Datos a ${firebaseConfig.projectId}`}
             </button>
-            {message && message.includes('Sincronizados') && (
-              <p className="mt-3 text-sm text-green-600 font-medium">{message}</p>
+            {message && message.includes('Éxito') && (
+              <p className="mt-3 text-sm text-green-600 font-bold bg-green-50 p-2 rounded border border-green-100">{message}</p>
             )}
-            {message && message.includes('Error') && (
-              <p className="mt-3 text-sm text-red-600 font-medium">{message}</p>
+            {message && (message.includes('Error') || message.includes('❌')) && (
+              <p className="mt-3 text-sm text-red-600 font-bold bg-red-50 p-2 rounded border border-red-100">{message}</p>
             )}
           </div>
         )}
@@ -205,7 +222,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
               </div>
             </div>
 
-            {message && !message.includes('Error') && !message.includes('Sincronizados') && (
+            {message && !message.includes('Error') && !message.includes('❌') && !message.includes('Éxito') && (
               <div className={`mt-4 p-3 rounded-lg text-sm flex items-center ${message.includes('restaurado') ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
                 <CheckCircle size={16} className="mr-2" />
                 {message}

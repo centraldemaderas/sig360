@@ -4,19 +4,18 @@ import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBesVOVBX1f_swH7ysIDfv4W8gLVkkqY88",
-  authDomain: "sig-360.firebaseapp.com",
-  projectId: "sig-360",
-  storageBucket: "sig-360.firebasestorage.app",
-  messagingSenderId: "914792559996",
-  appId: "1:914792559996:web:dc34438316f3ff140060f9",
-  measurementId: "G-Q1LDXFYEHD"
+// Actualizado con los datos del proyecto sig360-35d17
+export const firebaseConfig = {
+  apiKey: "AIzaSyAW1PT30nPjdn5SqN2o2TX_O0CXkCFHxwg",
+  authDomain: "sig360-35d17.firebaseapp.com",
+  projectId: "sig360-35d17",
+  storageBucket: "sig360-35d17.firebasestorage.app",
+  messagingSenderId: "625926676036",
+  appId: "1:625926676036:web:ac1cd4d96b3fe5ec85e611",
+  measurementId: "G-P2QLX4QXKQ"
 };
 
 // --- ACTIVACIÓN DE NUBE ---
-// CAMBIO IMPORTANTE: Se establece en TRUE para conectar a la base de datos real.
-// Ahora que index.html está limpio, esto funcionará correctamente en Netlify.
 export const USE_CLOUD_DB = true; 
 
 let app;
@@ -30,7 +29,7 @@ if (USE_CLOUD_DB) {
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
-    console.log("✅ Conectado a Firebase Cloud (DB + Storage)");
+    console.log(`✅ Conectado a Firebase Cloud: ${firebaseConfig.projectId}`);
   } catch (error) {
     console.error("❌ Error conectando a Firebase.", error);
   }
