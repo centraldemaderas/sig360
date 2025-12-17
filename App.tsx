@@ -7,27 +7,81 @@ import { Login } from './components/Login';
 import { UserManagement } from './components/UserManagement';
 import { SystemSettings } from './components/SystemSettings';
 import { StandardType, Activity, User } from './types';
-import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS } from './constants';
+import { dataService } from './services/dataService';
+import { USE_CLOUD_DB } from './firebaseConfig';
+import { Database, AlertTriangle, CloudLightning, Loader2 } from 'lucide-react';
 
 function App() {
   // Authentication State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // Data State
-  const [activeView, setActiveView] = useState('dashboard');
-  const [activities, setActivities] = useState<Activity[]>(MOCK_ACTIVITIES_GERENCIA);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  
-  // Year State (New functionality for 2025/2026 toggle)
-  const [currentYear, setCurrentYear] = useState<number>(2025);
-  
-  // App Config State - Initialize from LocalStorage
+  // App Config State
   const [companyLogo, setCompanyLogo] = useState<string | null>(() => {
     const savedLogo = localStorage.getItem('company_logo');
     return savedLogo || null;
   });
 
-  // Handler to update Logo and LocalStorage
+  // Data State
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+  
+  // Year State
+  const [currentYear, setCurrentYear] = useState<number>(2025);
+
+  // --- DATA SUBSCRIPTIONS ---
+  useEffect(() => {
+    // Subscribe to Activities with Error Handling
+    const unsubscribeActivities = dataService.subscribeToActivities(
+      (data) => {
+        setActivities(data);
+        // Add a small artificial delay only on first load to show the nice animation
+        // and prevent flickering if data loads instantly from cache
+        setTimeout(() => {
+            setIsLoading(false);
+        }, 1500);
+        setDbError(null); // Clear error if successful
+        if (USE_CLOUD_DB) setIsCloudConnected(true);
+      },
+      (error) => {
+        setIsLoading(false);
+        if (USE_CLOUD_DB) setIsCloudConnected(false);
+        // Detect common Firestore errors
+        if (error?.code === 'permission-denied' || error?.code === 'not-found' || error?.code === 'failed-precondition') {
+           setDbError("No se pudo conectar a la base de datos.");
+        } else {
+           setDbError("Error de conexión: " + error.message);
+        }
+      }
+    );
+
+    // Subscribe to Users
+    const unsubscribeUsers = dataService.subscribeToUsers((data) => {
+      setUsers(data);
+    });
+
+    // Helper for LocalStorage events (hybrid support)
+    const handleLocalChange = () => {
+      if (!USE_CLOUD_DB) {
+         setIsCloudConnected(false);
+         const localActs = localStorage.getItem('app_activities');
+         if(localActs) setActivities(JSON.parse(localActs));
+         
+         const localUsers = localStorage.getItem('app_users');
+         if(localUsers) setUsers(JSON.parse(localUsers));
+      }
+    };
+    window.addEventListener('local-data-changed', handleLocalChange);
+
+    return () => {
+      unsubscribeActivities();
+      unsubscribeUsers();
+      window.removeEventListener('local-data-changed', handleLocalChange);
+    };
+  }, []);
+
   const handleLogoChange = (logo: string | null) => {
     setCompanyLogo(logo);
     if (logo) {
@@ -48,41 +102,138 @@ function App() {
     setActiveView('dashboard');
   };
 
-  // --- Activity Handlers ---
-  const handleAddActivity = (newActivity: Activity) => {
-    setActivities([...activities, newActivity]);
+  // --- CRUD Handlers ---
+  const handleAddActivity = async (newActivity: Activity) => {
+    await dataService.addActivity(newActivity);
   };
 
-  const handleUpdateActivity = (updatedActivity: Activity) => {
-    setActivities(activities.map(act => act.id === updatedActivity.id ? updatedActivity : act));
+  const handleUpdateActivity = async (updatedActivity: Activity) => {
+    await dataService.updateActivity(updatedActivity);
   };
 
-  const handleDeleteActivity = (id: string) => {
+  const handleDeleteActivity = async (id: string) => {
     if (window.confirm("¿Está seguro de eliminar este requisito?")) {
-      setActivities(activities.filter(act => act.id !== id));
+      await dataService.deleteActivity(id);
     }
   };
 
-  // --- User Handlers ---
-  const handleAddUser = (newUser: User) => {
-    setUsers([...users, newUser]);
+  const handleAddUser = async (newUser: User) => {
+    await dataService.addUser(newUser);
   };
 
-  const handleUpdateUser = (updatedUser: User) => {
-    setUsers(users.map(user => user.id === updatedUser.id ? updatedUser : user));
+  const handleUpdateUser = async (updatedUser: User) => {
+    await dataService.updateUser(updatedUser);
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (window.confirm("¿Está seguro de eliminar este usuario?")) {
-      setUsers(users.filter(user => user.id !== id));
+      await dataService.deleteUser(id);
     }
   };
 
-  // If not logged in, show Login screen
-  if (!currentUser) {
-    return <Login onLogin={handleLogin} companyLogo={companyLogo} />;
+  const [activeView, setActiveView] = useState('dashboard');
+
+  // --- LOADING SCREEN ---
+  if (isLoading) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-slate-50 overflow-hidden relative">
+         <div className="absolute top-0 left-0 w-full h-full bg-grid-slate-200 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] bg-[length:20px_20px]"></div>
+         
+         <div className="relative z-10 flex flex-col items-center">
+            {/* Logo Animation */}
+            <div className="mb-8 relative">
+              <div className="absolute inset-0 bg-red-100 rounded-full animate-ping opacity-20"></div>
+              <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 relative z-10">
+                 {companyLogo ? (
+                    <img src={companyLogo} alt="Logo" className="h-16 object-contain" />
+                 ) : (
+                    <svg viewBox="0 0 120 120" className="h-20 w-20">
+                      <g strokeLinecap="round" strokeLinejoin="round" fill="none">
+                        <path d="M 20 80 L 60 40 L 100 80" stroke="#B91C1C" strokeWidth="10" />
+                        <path d="M 40 80 L 60 60 L 80 80" stroke="#1F2937" strokeWidth="10" />
+                        <rect x="53" y="70" width="14" height="14" transform="rotate(45 60 77)" fill="#1F2937" stroke="none" />
+                      </g>
+                    </svg>
+                 )}
+              </div>
+            </div>
+
+            <div className="text-center space-y-4">
+              <h2 className="text-2xl font-bold text-slate-800 tracking-tight">SIG-Manager Pro</h2>
+              <div className="flex items-center justify-center space-x-2 text-slate-500 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-200">
+                <Loader2 size={16} className="animate-spin text-blue-600" />
+                <span className="text-sm font-medium">Sincronizando con Firebase Cloud...</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">Central de Maderas G&S SAS</p>
+            </div>
+         </div>
+      </div>
+    );
   }
 
+  // --- DB SETUP GUIDE SCREEN (If DB is missing) ---
+  if (dbError && USE_CLOUD_DB) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
+        <div className="bg-white max-w-lg w-full rounded-2xl shadow-xl overflow-hidden border border-red-100">
+          <div className="bg-red-600 p-6 text-white text-center">
+             <Database size={48} className="mx-auto mb-2 opacity-90" />
+             <h2 className="text-2xl font-bold">Falta Base de Datos</h2>
+             <p className="text-red-100 mt-1 text-sm">El sistema está configurado pero no encuentra la base de datos.</p>
+          </div>
+          <div className="p-8 space-y-6">
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-start">
+              <AlertTriangle className="text-amber-600 mr-3 mt-0.5 flex-shrink-0" size={20} />
+              <p className="text-sm text-amber-800">
+                Firebase está conectado, pero Firestore (la base de datos) no está creada o no tiene permisos.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+               <h3 className="font-bold text-slate-800 border-b pb-2">Pasos para corregirlo (En tu navegador):</h3>
+               <ol className="list-decimal pl-5 text-slate-600 space-y-3 text-sm">
+                 <li>Ve a la <strong>Consola de Firebase</strong> (donde te registraste).</li>
+                 <li>En el menú izquierdo, haz clic en <strong>Compilación (Build)</strong>.</li>
+                 <li>Selecciona <strong>Firestore Database</strong>.</li>
+                 <li>Haz clic en el botón <strong>"Crear base de datos"</strong>.</li>
+                 <li>
+                   <strong>MUY IMPORTANTE:</strong> Cuando te pregunte por las Reglas de Seguridad, selecciona 
+                   <span className="font-bold text-slate-900 bg-slate-200 px-1 mx-1 rounded">Comenzar en modo de prueba</span> 
+                   (Start in test mode).
+                 </li>
+                 <li>Haz clic en "Crear" o "Habilitar".</li>
+               </ol>
+            </div>
+
+            <div className="text-center pt-2">
+               <button 
+                onClick={() => window.location.reload()}
+                className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
+               >
+                 Ya la creé, Recargar Página
+               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- LOGIN SCREEN ---
+  if (!currentUser) {
+    return (
+      <>
+        {!USE_CLOUD_DB && (
+          <div className="bg-yellow-100 text-yellow-800 text-xs text-center p-1 fixed top-0 w-full z-50">
+            Modo Local: Los datos no se sincronizan entre dispositivos. Configura Firebase para habilitar la Nube.
+          </div>
+        )}
+        <Login onLogin={handleLogin} companyLogo={companyLogo} users={users} />
+      </>
+    );
+  }
+
+  // --- MAIN APP ---
   const renderContent = () => {
     switch (activeView) {
       case 'dashboard':
@@ -154,6 +305,7 @@ function App() {
       currentUser={currentUser}
       onLogout={handleLogout}
       companyLogo={companyLogo}
+      isCloudConnected={isCloudConnected}
     >
       {renderContent()}
     </Layout>

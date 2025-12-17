@@ -10,7 +10,9 @@ import {
   Settings,
   Users,
   LogOut,
-  Sliders
+  Sliders,
+  CloudLightning,
+  HardDrive
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -21,9 +23,18 @@ interface LayoutProps {
   currentUser: User;
   onLogout: () => void;
   companyLogo?: string | null;
+  isCloudConnected?: boolean;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, currentUser, onLogout, companyLogo }) => {
+export const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeView, 
+  setActiveView, 
+  currentUser, 
+  onLogout, 
+  companyLogo,
+  isCloudConnected = false 
+}) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
   const navItems = [
@@ -186,11 +197,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveV
           </div>
           <div className="flex items-center space-x-4">
             <div className="hidden md:flex flex-col items-end mr-2">
-               <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Estado del Sistema</span>
-               <span className="flex items-center text-green-600 font-bold text-sm bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
-                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-                 CERTIFICADO
-               </span>
+               <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Estado de Conexión</span>
+               {isCloudConnected ? (
+                 <span className="flex items-center text-green-600 font-bold text-sm bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
+                   <CloudLightning size={14} className="mr-1.5" />
+                   NUBE ACTIVA
+                 </span>
+               ) : (
+                 <span className="flex items-center text-amber-600 font-bold text-sm bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                   <HardDrive size={14} className="mr-1.5" />
+                   MODO LOCAL
+                 </span>
+               )}
             </div>
             <div className="h-8 w-px bg-slate-200 mx-2"></div>
             <button className="relative p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors hover:text-slate-600 border border-transparent hover:border-slate-200">

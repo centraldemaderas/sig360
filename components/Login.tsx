@@ -1,25 +1,27 @@
 import React, { useState } from 'react';
 import { Lock, User } from 'lucide-react';
-import { MOCK_USERS } from '../constants';
 import { User as UserType } from '../types';
 
 interface LoginProps {
   onLogin: (user: UserType) => void;
   companyLogo?: string | null;
+  users: UserType[]; // Receive the current list of users from App state
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, companyLogo }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, companyLogo, users }) => {
   const [email, setEmail] = useState('admin@centralmaderas.com');
   const [password, setPassword] = useState('123');
   const [error, setError] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const user = MOCK_USERS.find(u => u.email === email && u.password === password);
+    // Validate against the dynamic 'users' prop, not the static constant
+    const user = users.find(u => u.email === email && u.password === password);
+    
     if (user) {
       onLogin(user);
     } else {
-      setError('Credenciales inválidas. Intente con admin@centralmaderas.com / 123');
+      setError('Credenciales inválidas o usuario no encontrado.');
     }
   };
 
