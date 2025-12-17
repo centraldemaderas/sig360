@@ -2,8 +2,13 @@
 import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
 import { Activity, StandardType, Periodicity, User, UserRole, Evidence, CommentLog } from '../types';
-// Added missing icon imports: ShieldCheck and CheckCircle
-import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, MessageSquare, Clock, History, User as UserIcon, Send, ShieldCheck, CheckCircle } from 'lucide-react';
+import { 
+  Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, 
+  HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, 
+  Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, 
+  MessageSquare, Clock, History, User as UserIcon, Send, ShieldCheck, 
+  CheckCircle, Info, BookOpen, Target, Briefcase
+} from 'lucide-react';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -24,9 +29,13 @@ export const StandardView: React.FC<StandardViewProps> = ({
 }) => {
   const [selectedArea, setSelectedArea] = useState('ALL');
   
+  // Modals state
   const [modalOpen, setModalOpen] = useState(false);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
   const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
+  
+  // Form states
   const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [adminComment, setAdminComment] = useState('');
@@ -48,6 +57,11 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setLinkInput('');
     setAdminComment('');
     setUpdateNote('');
+  };
+
+  const openInfoModal = (activityId: string) => {
+    setActiveActivityId(activityId);
+    setInfoModalOpen(true);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,7 +88,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
       const existingItem = activityToUpdate.monthlyPlan[activeMonthIndex];
       const existingHistory = existingItem.evidence?.history || [];
 
-      // Create log for the update/upload
       const updateLog: CommentLog = {
         id: `log-upd-${Date.now()}`,
         text: updateNote || (existingItem.evidence ? 'Se cargó una nueva versión de la evidencia para revisión.' : 'Carga inicial de evidencia.'),
@@ -283,8 +296,10 @@ export const StandardView: React.FC<StandardViewProps> = ({
      return { executed, planned };
   };
 
-  const activeEvidence = activeActivityId && activeMonthIndex !== null 
-    ? activities.find(a => a.id === activeActivityId)?.monthlyPlan[activeMonthIndex]?.evidence 
+  const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
+  
+  const activeEvidence = activeActivity && activeMonthIndex !== null 
+    ? activeActivity.monthlyPlan[activeMonthIndex]?.evidence 
     : null;
 
   return (
@@ -334,8 +349,17 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     <div className="text-sm font-bold text-slate-700">{activity.clause}</div>
                     {activity.subClause && <div className="text-[10px] text-slate-500 bg-slate-100 px-1 rounded inline-block mt-1">{activity.subClause}</div>}
                   </td>
-                  <td className="p-3 border-r border-slate-200 bg-white">
-                    <div className="font-semibold text-slate-800 line-clamp-2" title={activity.clauseTitle}>{activity.clauseTitle}</div>
+                  <td className="p-3 border-r border-slate-200 bg-white relative">
+                    <div className="flex justify-between items-start group">
+                      <div className="font-semibold text-slate-800 line-clamp-2 pr-6" title={activity.clauseTitle}>{activity.clauseTitle}</div>
+                      <button 
+                        onClick={() => openInfoModal(activity.id)}
+                        className="text-blue-400 hover:text-blue-600 transition-colors p-1 rounded-full hover:bg-blue-50"
+                        title="Ver detalles del requisito"
+                      >
+                        <Info size={14} />
+                      </button>
+                    </div>
                     {selectedArea === 'ALL' && <span className="inline-block mt-1 px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">{activity.responsibleArea}</span>}
                   </td>
                   <td className="p-3 border-r border-slate-200 bg-white"><div className="text-slate-600 text-[11px] leading-snug line-clamp-3">{activity.relatedQuestions || <span className="text-slate-400 italic">Sin tarea específica definida</span>}</div></td>
@@ -357,7 +381,83 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </table>
       </div>
 
-      {modalOpen && activeActivityId && activeMonthIndex !== null && (
+      {/* INFO MODAL: Requisite Details */}
+      {infoModalOpen && activeActivity && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
+             <div className="p-6 bg-slate-800 text-white flex justify-between items-center">
+                <div className="flex items-center">
+                   <div className="p-2 bg-blue-500 rounded-lg mr-4">
+                      <BookOpen size={20} className="text-white" />
+                   </div>
+                   <div>
+                      <h3 className="text-lg font-bold leading-tight">{activeActivity.clauseTitle}</h3>
+                      <p className="text-blue-300 text-[10px] font-black uppercase tracking-widest mt-0.5">Cláusula {activeActivity.clause} {activeActivity.subClause}</p>
+                   </div>
+                </div>
+                <button onClick={() => setInfoModalOpen(false)} className="text-slate-300 hover:text-white transition-colors">
+                  <X size={24} />
+                </button>
+             </div>
+             
+             <div className="p-8 space-y-6 overflow-y-auto scrollbar-thin max-h-[70vh]">
+                <div className="space-y-2">
+                   <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-1">
+                      <ShieldCheck size={14} className="mr-2" /> Descripción Oficial (Norma)
+                   </div>
+                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm text-slate-600 leading-relaxed italic">
+                      "{activeActivity.description}"
+                   </div>
+                </div>
+
+                <div className="space-y-2">
+                   <div className="flex items-center text-blue-600 font-bold text-[10px] uppercase tracking-wider mb-1">
+                      <Target size={14} className="mr-2" /> Contextualización Central de Maderas
+                   </div>
+                   <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-sm text-slate-700 leading-relaxed font-medium">
+                      {activeActivity.contextualization}
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
+                         <Briefcase size={14} className="mr-2" /> Responsable
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">{activeActivity.responsibleArea}</p>
+                   </div>
+                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
+                         <Calendar size={14} className="mr-2" /> Periodicidad
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">{activeActivity.periodicity}</p>
+                   </div>
+                </div>
+
+                <div className="space-y-2">
+                   <div className="flex items-center text-amber-600 font-bold text-[10px] uppercase tracking-wider mb-1">
+                      <CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio
+                   </div>
+                   <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 text-sm text-amber-900 leading-relaxed">
+                      {activeActivity.relatedQuestions}
+                   </div>
+                </div>
+             </div>
+
+             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button 
+                  onClick={() => setInfoModalOpen(false)}
+                  className="px-6 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all shadow-md"
+                >
+                   Cerrar Consulta
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* VERIFICATION MODAL: Upload / Approve */}
+      {modalOpen && activeActivity && activeMonthIndex !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -365,7 +465,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                 <h3 className="text-lg font-bold text-slate-800 flex items-center">
                    {currentUser.role === UserRole.ADMIN ? 'Gestión y Verificación de Evidencia' : 'Cargar / Actualizar Evidencia'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">{MONTHS[activeMonthIndex]} - {activities.find(a => a.id === activeActivityId)?.clauseTitle}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{MONTHS[activeMonthIndex]} - {activeActivity.clauseTitle}</p>
               </div>
               <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
