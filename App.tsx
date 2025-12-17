@@ -33,11 +33,17 @@ function App() {
 
   // --- DATA SUBSCRIPTIONS ---
   useEffect(() => {
+    // 1. Timeout de Seguridad: Si Firebase tarda más de 3 segundos, quitamos la pantalla de carga
+    // para que el usuario pueda interactuar (aunque los datos aparezcan un segundo después).
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 3000);
+
     // Subscribe to Activities with Error Handling
     const unsubscribeActivities = dataService.subscribeToActivities(
       (data) => {
         setActivities(data);
-        setIsLoading(false);
+        setIsLoading(false); // Datos llegaron, quitamos carga
         setDbError(null); // Clear error if successful
         if (USE_CLOUD_DB) setIsCloudConnected(true);
       },
@@ -72,6 +78,7 @@ function App() {
     window.addEventListener('local-data-changed', handleLocalChange);
 
     return () => {
+      clearTimeout(safetyTimer);
       unsubscribeActivities();
       unsubscribeUsers();
       window.removeEventListener('local-data-changed', handleLocalChange);
@@ -131,7 +138,12 @@ function App() {
 
   // --- LOADING SCREEN ---
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium">Cargando sistema...</div>;
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium space-y-4">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div>
+        <p>Iniciando Sistema...</p>
+      </div>
+    );
   }
 
   // --- DB SETUP GUIDE SCREEN (If DB is missing) ---
