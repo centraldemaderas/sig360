@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
 import { Activity, StandardType, Periodicity, User, UserRole, Evidence, CommentLog } from '../types';
-import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, MessageSquare, Clock, History, User as UserIcon } from 'lucide-react';
+// Added missing icon imports: ShieldCheck and CheckCircle
+import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, MessageSquare, Clock, History, User as UserIcon, Send, ShieldCheck, CheckCircle } from 'lucide-react';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -29,6 +30,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [adminComment, setAdminComment] = useState('');
+  const [updateNote, setUpdateNote] = useState('');
   
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -45,6 +47,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setUploadType(null);
     setLinkInput('');
     setAdminComment('');
+    setUpdateNote('');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,6 +71,18 @@ export const StandardView: React.FC<StandardViewProps> = ({
       const activityToUpdate = activities.find(a => a.id === activeActivityId);
       if (!activityToUpdate || activeMonthIndex === null) return;
 
+      const existingItem = activityToUpdate.monthlyPlan[activeMonthIndex];
+      const existingHistory = existingItem.evidence?.history || [];
+
+      // Create log for the update/upload
+      const updateLog: CommentLog = {
+        id: `log-upd-${Date.now()}`,
+        text: updateNote || (existingItem.evidence ? 'Se cargó una nueva versión de la evidencia para revisión.' : 'Carga inicial de evidencia.'),
+        author: currentUser.name,
+        date: new Date().toLocaleString(),
+        status: 'PENDING'
+      };
+
       const newMonthlyPlan = activityToUpdate.monthlyPlan.map((item, index) => {
         if (index !== activeMonthIndex) return item;
         return {
@@ -80,10 +95,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
             uploadedBy: currentUser.name,
             uploadedAt: new Date().toLocaleDateString(),
             status: 'PENDING',
-            adminComment: null as any,
-            approvedBy: null as any,
-            rejectionDate: null as any,
-            history: (item.evidence?.history || [])
+            adminComment: updateLog.text,
+            history: [updateLog, ...existingHistory]
           } as Evidence
         };
       });
@@ -102,8 +115,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
     if (!targetPlan || !targetPlan.evidence) return;
 
     const newCommentEntry: CommentLog = {
-      id: `log-${Date.now()}`,
-      text: adminComment || (status === 'APPROVED' ? 'Evidencia validada correctamente.' : 'Evidencia rechazada.'),
+      id: `log-adm-${Date.now()}`,
+      text: adminComment || (status === 'APPROVED' ? 'Evidencia validada y aprobada.' : 'Evidencia rechazada por inconformidad.'),
       author: currentUser.name,
       date: new Date().toLocaleString(),
       status: status
@@ -350,7 +363,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                   {currentUser.role === UserRole.ADMIN ? 'Gestión y Verificación de Evidencia' : 'Cargar Evidencia'}
+                   {currentUser.role === UserRole.ADMIN ? 'Gestión y Verificación de Evidencia' : 'Cargar / Actualizar Evidencia'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">{MONTHS[activeMonthIndex]} - {activities.find(a => a.id === activeActivityId)?.clauseTitle}</p>
               </div>
@@ -363,7 +376,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    <div className="flex justify-between items-start mb-2">
                       <span className="text-xs font-bold text-blue-800">Archivo Actual:</span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeEvidence.status === 'APPROVED' ? 'bg-green-200 text-green-800' : activeEvidence.status === 'REJECTED' ? 'bg-orange-200 text-orange-800' : 'bg-blue-200 text-blue-800'}`}>
-                         {activeEvidence.status}
+                         {activeEvidence.status === 'PENDING' ? 'Por Verificar' : activeEvidence.status === 'APPROVED' ? 'Aprobado' : 'Rechazado'}
                       </span>
                    </div>
                    <div className="flex items-center space-x-2 mb-3">
@@ -384,23 +397,25 @@ export const StandardView: React.FC<StandardViewProps> = ({
               {activeEvidence && activeEvidence.history && activeEvidence.history.length > 0 && (
                 <div className="space-y-3">
                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center">
-                     <History size={14} className="mr-2" /> Historial de Gestión y Comentarios
+                     <History size={14} className="mr-2" /> Historial de Gestión (Bitácora)
                    </h4>
                    <div className="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                      {activeEvidence.history.map((log) => (
                        <div key={log.id} className="relative pl-8">
-                         <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 ${log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : 'bg-orange-100 border-orange-500 text-orange-600'}`}>
-                            {log.status === 'APPROVED' ? <Check size={12} /> : <ThumbsDown size={12} />}
+                         <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-sm ${log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : log.status === 'REJECTED' ? 'bg-orange-100 border-orange-500 text-orange-600' : 'bg-blue-100 border-blue-500 text-blue-600'}`}>
+                            {log.status === 'APPROVED' ? <Check size={12} /> : log.status === 'REJECTED' ? <ThumbsDown size={12} /> : <Upload size={12} />}
                          </div>
-                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:border-slate-300 transition-colors">
                            <div className="flex justify-between items-center mb-1">
                              <div className="flex items-center space-x-2">
                                <span className="text-xs font-bold text-slate-700 flex items-center"><UserIcon size={12} className="mr-1" /> {log.author}</span>
-                               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${log.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{log.status === 'APPROVED' ? 'Aprobado' : 'Rechazado'}</span>
+                               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${log.status === 'APPROVED' ? 'bg-green-100 text-green-700' : log.status === 'REJECTED' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                 {log.status === 'APPROVED' ? 'Aprobado' : log.status === 'REJECTED' ? 'Rechazado' : 'Actualización'}
+                               </span>
                              </div>
                              <span className="text-[10px] text-slate-400">{log.date}</span>
                            </div>
-                           <p className="text-xs text-slate-600 leading-relaxed">{log.text}</p>
+                           <p className="text-xs text-slate-600 leading-relaxed font-medium">{log.text}</p>
                          </div>
                        </div>
                      ))}
@@ -409,39 +424,76 @@ export const StandardView: React.FC<StandardViewProps> = ({
               )}
 
               {/* ADMIN ACTION: VERIFY */}
-              {currentUser.role === UserRole.ADMIN && activeEvidence && (
+              {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status !== 'APPROVED' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
+                   <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
+                      <p className="text-xs text-amber-800 font-bold flex items-center"><ShieldCheck size={14} className="mr-2" /> Panel de Validación Administrativa</p>
+                   </div>
                    <div>
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Añadir Comentario de Gestión</label>
-                     <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[100px]" placeholder="Escriba los hallazgos, recomendaciones o el motivo del rechazo..." />
+                     <label className="block text-sm font-bold text-slate-700 mb-2">Comentario de Evaluación</label>
+                     <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[100px]" placeholder="Escriba los hallazgos de la auditoría documental o el motivo del rechazo para que el líder lo corrija..." />
                    </div>
                    <div className="flex space-x-3">
-                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-orange-100 text-orange-700 py-3 rounded-xl font-bold hover:bg-orange-200 flex items-center justify-center border border-orange-200 transition-colors shadow-sm"><ThumbsDown size={18} className="mr-2" /> Rechazar (Naranja)</button>
-                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 flex items-center justify-center shadow-md transition-colors"><ThumbsUp size={18} className="mr-2" /> Aprobar (Verde)</button>
+                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-orange-100 text-orange-700 py-3 rounded-xl font-bold hover:bg-orange-200 flex items-center justify-center border border-orange-200 transition-colors shadow-sm"><ThumbsDown size={18} className="mr-2" /> Rechazar Evidencia</button>
+                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 flex items-center justify-center shadow-md transition-colors"><ThumbsUp size={18} className="mr-2" /> Aprobar y Validar</button>
                    </div>
                 </div>
               )}
 
               {/* USER ACTION: UPLOAD/UPDATE */}
-              {(!activeEvidence || currentUser.role !== UserRole.ADMIN) && (
-                 <div className="space-y-3 pt-2">
+              {(currentUser.role !== UserRole.ADMIN || (activeEvidence && activeEvidence.status === 'APPROVED')) && (
+                 <div className="space-y-4 pt-2 border-t border-slate-100">
+                    {activeEvidence && (
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center"><RefreshCw size={16} className="mr-2 text-blue-600" /> ¿Desea actualizar la evidencia?</h4>
+                        <div className="mb-4">
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nota de actualización / Corrección</label>
+                           <textarea 
+                             value={updateNote}
+                             onChange={e => setUpdateNote(e.target.value)}
+                             placeholder="Explique qué cambios realizó o responda a las observaciones del auditor..."
+                             className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
+                           />
+                        </div>
+                      </div>
+                    )}
+
                    {!uploadType ? (
-                     <>
-                      <button onClick={() => setUploadType('link')} className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group shadow-sm"><Cloud size={20} className="text-blue-500 mr-3" /><span className="text-sm font-bold text-slate-700">OneDrive / SharePoint / Web Link</span></button>
-                      <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group shadow-sm"><ImageIcon size={20} className="text-slate-500 mr-3" /><span className="text-sm font-bold text-slate-700">Archivo Local / Foto</span></button>
-                      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
-                     </>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button onClick={() => setUploadType('link')} className="flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group shadow-sm bg-white">
+                          <Cloud size={20} className="text-blue-500 mr-3" />
+                          <span className="text-sm font-bold text-slate-700">Actualizar por Link (OneDrive)</span>
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group shadow-sm bg-white">
+                          <ImageIcon size={20} className="text-slate-500 mr-3" />
+                          <span className="text-sm font-bold text-slate-700">Subir Nuevo Archivo Local</span>
+                        </button>
+                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
+                     </div>
                    ) : (
-                     <div className="space-y-3">
-                       <p className="text-sm text-slate-600 font-bold">Pegar enlace del documento:</p>
+                     <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                       <p className="text-sm text-slate-600 font-bold">Pegar nuevo enlace de documento:</p>
                        <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://..." />
                        <div className="flex justify-end gap-2">
                          <button onClick={() => setUploadType(null)} className="px-4 py-2 text-slate-500 text-sm font-bold">Atrás</button>
-                         <button onClick={handleLinkSubmit} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 font-bold shadow-md">Guardar Evidencia</button>
+                         <button onClick={handleLinkSubmit} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 font-bold shadow-md flex items-center">
+                           <Send size={16} className="mr-2" /> Enviar para Revisión
+                         </button>
                        </div>
                      </div>
                    )}
                  </div>
+              )}
+              
+              {/* ADMIN VIEW ONLY FOR APPROVED */}
+              {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status === 'APPROVED' && (
+                <div className="bg-green-50 p-4 rounded-xl border border-green-200 flex items-center text-green-800">
+                   <CheckCircle className="mr-3" />
+                   <div className="text-sm">
+                      <p className="font-bold">Esta evidencia ya fue validada.</p>
+                      <p className="opacity-80">No se requieren acciones adicionales.</p>
+                   </div>
+                </div>
               )}
             </div>
           </div>
