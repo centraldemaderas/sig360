@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { Activity, Periodicity, MonthlyExecution, StandardDefinition } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Activity, Periodicity, MonthlyExecution, StandardDefinition, Plant } from '../types';
 import { AREAS } from '../constants';
-import { Plus, Edit2, Trash2, X, Search, AlertTriangle, ShieldCheck, FileText, TreePine, Briefcase, Truck } from 'lucide-react';
+import { dataService } from '../services/dataService';
+import { Plus, Edit2, Trash2, X, Search, AlertTriangle, ShieldCheck, FileText, TreePine, Briefcase, Truck, Factory, CheckSquare, Square } from 'lucide-react';
 
 interface RequirementsManagerProps {
   activities: Activity[];
@@ -24,6 +25,12 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [selectedPeriodicity, setSelectedPeriodicity] = useState<Periodicity>(Periodicity.MONTHLY);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [plants, setPlants] = useState<Plant[]>([]);
+
+  useEffect(() => {
+    const unsub = dataService.subscribeToPlants(data => setPlants(data));
+    return () => unsub();
+  }, []);
 
   const [formData, setFormData] = useState<Partial<Activity>>({
     clause: '',
@@ -34,6 +41,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
     relatedQuestions: '',
     responsibleArea: AREAS[0],
     standards: [],
+    plantIds: ['MOSQUERA'], 
     compliance2024: false,
     compliance2025: false
   });
@@ -55,6 +63,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
         relatedQuestions: '',
         responsibleArea: AREAS[0],
         standards: standardsList.length > 0 ? [standardsList[0].type] : [],
+        plantIds: ['MOSQUERA'],
         compliance2024: false,
         compliance2025: false
       });
@@ -86,11 +95,25 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
     }
   };
 
+  const handleTogglePlant = (plantId: string) => {
+    const currentPlants = formData.plantIds || [];
+    if (currentPlants.includes(plantId)) {
+      if (plantId === 'MOSQUERA') return;
+      setFormData({ ...formData, plantIds: currentPlants.filter(p => p !== plantId) });
+    } else {
+      setFormData({ ...formData, plantIds: [...currentPlants, plantId] });
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     if (!formData.standards || formData.standards.length === 0) {
       setErrorMsg("Debe seleccionar al menos un Sistema de Gestión (Norma).");
+      return;
+    }
+    if (!formData.plantIds || formData.plantIds.length === 0) {
+      setErrorMsg("Debe seleccionar al menos una planta.");
       return;
     }
     let finalPlans = editingActivity?.plans || {};
@@ -107,6 +130,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
       relatedQuestions: formData.relatedQuestions || '',
       responsibleArea: formData.responsibleArea || AREAS[0],
       standards: formData.standards || [],
+      plantIds: formData.plantIds || ['MOSQUERA'],
       periodicity: selectedPeriodicity,
       compliance2024: formData.compliance2024 || false,
       compliance2025: formData.compliance2025 || false,
@@ -138,7 +162,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">Requisitos y Matriz</h2>
-          <p className="text-slate-500 font-medium">Configure actividades, responsables y periodicidad para los distintos estándares.</p>
+          <p className="text-slate-500 font-medium">Configure actividades, responsables y periodicidad para los distintos estándares y plantas.</p>
         </div>
         <button onClick={() => handleOpenModal()} className="bg-slate-900 hover:bg-black text-white px-6 py-2.5 rounded-xl flex items-center shadow-lg text-xs font-black uppercase tracking-widest transition-all active:scale-95">
           <Plus size={18} className="mr-2" /> Nuevo Requisito
@@ -158,7 +182,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               <tr>
                 <th className="p-5 w-28 text-center border-r border-slate-100">Cláusula</th>
                 <th className="p-5">Requisito / Norma</th>
-                <th className="p-5">Tarea Específica / Criterio</th>
+                <th className="p-5">Plantas Asignadas</th>
                 <th className="p-5 w-40">Responsable</th>
                 <th className="p-5 w-32 text-center">Acciones</th>
               </tr>
@@ -176,7 +200,22 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                       })}
                     </div>
                   </td>
-                  <td className="p-5"><div className="text-slate-600 line-clamp-2 italic font-medium">{activity.relatedQuestions || 'Sin tarea definida'}</div></td>
+                  <td className="p-5">
+                    <div className="flex flex-wrap gap-1">
+                      {activity.plantIds?.map(pid => {
+                        const plant = plants.find(p => p.id === pid);
+                        // CRÍTICO: Solo mostrar badges de plantas que existen en el sistema manejado (PlantManager)
+                        // Esto elimina los badges grises de IDs huérfanos o desactualizados.
+                        if (!plant) return null;
+                        
+                        return (
+                          <span key={pid} className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${plant.isMain ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-slate-50 text-slate-600 border border-slate-100'}`}>
+                            {plant.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
                   <td className="p-5"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-tighter border border-slate-200">{activity.responsibleArea}</span></td>
                   <td className="p-5 text-center">
                     <div className="flex justify-center space-x-2">
@@ -194,28 +233,55 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[5000] p-4 backdrop-blur-md">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200">
             <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
               <div><h3 className="text-2xl font-black text-slate-900 tracking-tight">{editingActivity ? 'Editar Requisito' : 'Nuevo Requisito'}</h3><p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1">Matriz de cumplimiento integral</p></div>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-900 transition-colors p-2 hover:bg-slate-100 rounded-full"><X size={28} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-8 overflow-y-auto scrollbar-thin bg-white">
               {errorMsg && <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-center text-red-800 text-xs font-black animate-pulse"><AlertTriangle size={18} className="mr-3 shrink-0" />{errorMsg}</div>}
-              <div className="space-y-3">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Sistemas de Gestión Aplicables (Normas)</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {standardsList.map((std) => {
-                    const Icon = getStandardIcon(std.type);
-                    const isSelected = formData.standards?.includes(std.type);
-                    return (
-                      <button key={std.id} type="button" onClick={() => handleToggleStandard(std.type)} className={`flex items-center p-3 rounded-2xl border-2 transition-all text-left group ${isSelected ? `bg-blue-50 border-blue-500 text-blue-900 shadow-sm` : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-slate-300'}`}>
-                        <div className={`p-1.5 rounded-lg mr-2 ${isSelected ? `bg-blue-200` : 'bg-white'}`}><Icon size={18} className={isSelected ? `text-blue-700` : 'text-slate-300'} /></div>
-                        <span className="text-[9px] font-black uppercase tracking-tight leading-tight">{std.type}</span>
-                      </button>
-                    );
-                  })}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sistemas de Gestión Aplicables</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {standardsList.map((std) => {
+                      const Icon = getStandardIcon(std.type);
+                      const isSelected = formData.standards?.includes(std.type);
+                      return (
+                        <button key={std.id} type="button" onClick={() => handleToggleStandard(std.type)} className={`flex items-center p-3 rounded-2xl border-2 transition-all text-left group ${isSelected ? `bg-blue-50 border-blue-500 text-blue-900 shadow-sm` : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-slate-300'}`}>
+                          <div className={`p-1.5 rounded-lg mr-2 ${isSelected ? `bg-blue-200` : 'bg-white'}`}><Icon size={16} className={isSelected ? `text-blue-700` : 'text-slate-300'} /></div>
+                          <span className="text-[9px] font-black uppercase tracking-tight leading-tight">{std.type}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Plantas / Centros de Operación</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {plants.map((plt) => {
+                      const isSelected = formData.plantIds?.includes(plt.id);
+                      return (
+                        <button 
+                          key={plt.id} 
+                          type="button" 
+                          onClick={() => handleTogglePlant(plt.id)} 
+                          className={`flex items-center p-2.5 rounded-xl border-2 transition-all text-left group ${isSelected ? `bg-red-50 border-red-500 text-red-900` : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                        >
+                          <div className="mr-2">
+                            {isSelected ? <CheckSquare size={16} className="text-red-600" /> : <Square size={16} className="text-slate-300" />}
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-tight truncate">{plt.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[9px] text-slate-400 italic">Nota: Mosquera centralizará todos los requisitos independientemente de esta selección.</p>
                 </div>
               </div>
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="col-span-1"><label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Cláusula</label><input required type="text" value={formData.clause} onChange={e => setFormData({...formData, clause: e.target.value})} className="w-full border-2 border-slate-100 rounded-2xl p-3.5 text-sm focus:border-blue-500 font-black bg-slate-50" placeholder="Ej: 4.1" /></div>
                 <div className="col-span-1"><label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Sub-numeral</label><input required type="text" value={formData.subClause} onChange={e => setFormData({...formData, subClause: e.target.value})} className="w-full border-2 border-slate-100 rounded-2xl p-3.5 text-sm focus:border-blue-500 font-black bg-slate-50" placeholder="Ej: 4.1.1" /></div>
@@ -223,10 +289,10 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               </div>
               <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Título del Requisito</label><input required type="text" value={formData.clauseTitle} onChange={e => setFormData({...formData, clauseTitle: e.target.value})} className="w-full border-2 border-slate-100 rounded-2xl p-3.5 text-sm focus:border-blue-500 font-black bg-slate-50" /></div>
               <div className="space-y-6">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Norma (Descripción Técnica)</label><textarea rows={4} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full border-2 border-slate-100 rounded-2xl p-5 text-sm font-medium bg-slate-50/50" /></div>
+                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Norma (Descripción Técnica)</label><textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full border-2 border-slate-100 rounded-2xl p-5 text-sm font-medium bg-slate-50/50" /></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div><label className="block text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-2">Contextualización</label><textarea rows={4} value={formData.contextualization} onChange={e => setFormData({...formData, contextualization: e.target.value})} className="w-full border-2 border-blue-50 rounded-2xl p-5 text-sm font-semibold bg-blue-50/20" /></div>
-                  <div><label className="block text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] mb-2">Tarea Específica / Criterio</label><textarea rows={4} value={formData.relatedQuestions} onChange={e => setFormData({...formData, relatedQuestions: e.target.value})} className="w-full border-2 border-amber-50 rounded-2xl p-5 text-sm font-black bg-amber-50/20" /></div>
+                  <div><label className="block text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-2">Contextualización</label><textarea rows={3} value={formData.contextualization} onChange={e => setFormData({...formData, contextualization: e.target.value})} className="w-full border-2 border-blue-50 rounded-2xl p-5 text-sm font-semibold bg-blue-50/20" /></div>
+                  <div><label className="block text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] mb-2">Tarea Específica / Criterio</label><textarea rows={3} value={formData.relatedQuestions} onChange={e => setFormData({...formData, relatedQuestions: e.target.value})} className="w-full border-2 border-amber-50 rounded-2xl p-5 text-sm font-black bg-amber-50/20" /></div>
                 </div>
               </div>
               <div className="bg-slate-900 p-8 rounded-[1.5rem] border-2 border-slate-800 shadow-xl shadow-slate-200">

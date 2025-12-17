@@ -9,10 +9,11 @@ import { UserManagement } from './components/UserManagement';
 import { SystemSettings } from './components/SystemSettings';
 import { StandardManager } from './components/StandardManager';
 import { EvidenceDashboard } from './components/EvidenceDashboard';
-import { StandardType, Activity, User, StandardDefinition } from './types';
+import { PlantManager } from './components/PlantManager';
+import { StandardType, Activity, User, StandardDefinition, Plant } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
-import { Database, AlertTriangle } from 'lucide-react';
+import { Database } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -20,6 +21,7 @@ function App() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [standards, setStandards] = useState<StandardDefinition[]>([]);
+  const [plants, setPlants] = useState<Plant[]>([]);
   const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,228 +31,70 @@ function App() {
   const [activeView, setActiveView] = useState('dashboard');
 
   useEffect(() => {
-    if (activitiesLoaded && usersLoaded) {
-      setIsLoading(false);
-    }
+    if (activitiesLoaded && usersLoaded) setIsLoading(false);
   }, [activitiesLoaded, usersLoaded]);
 
   useEffect(() => {
-    const safetyTimer = setTimeout(() => {
-      setIsLoading(false);
-    }, 5000);
+    const safetyTimer = setTimeout(() => setIsLoading(false), 5000);
 
     const unsubscribeActivities = dataService.subscribeToActivities(
-      (data) => {
-        setActivities(data);
-        setActivitiesLoaded(true);
-        setDbError(null); 
-        if (USE_CLOUD_DB) setIsCloudConnected(true);
-      },
-      (error) => {
-        console.error("Firestore Error (Activities):", error);
-        setActivitiesLoaded(true); 
-        if (USE_CLOUD_DB) setIsCloudConnected(false);
-        if (error?.code === 'failed-precondition' || error?.code === 'not-found') {
-           setDbError("No se pudo conectar a la base de datos.");
-        }
-      }
+      (data) => { setActivities(data); setActivitiesLoaded(true); if (USE_CLOUD_DB) setIsCloudConnected(true); },
+      (error) => { setActivitiesLoaded(true); if (USE_CLOUD_DB) setIsCloudConnected(false); if (error?.code === 'failed-precondition') setDbError("Falta base de datos."); }
     );
 
-    const unsubscribeUsers = dataService.subscribeToUsers(
-      (data) => {
-        setUsers(data);
-        setUsersLoaded(true);
-      },
-      (error) => {
-        console.error("Error loading users", error);
-        setUsersLoaded(true); 
-      }
-    );
-
-    const unsubscribeStandards = dataService.subscribeToStandards((data) => {
-      setStandards(data);
-    });
-
-    const unsubscribeSettings = dataService.subscribeToSettings((data) => {
-      if (data && data.companyLogo) {
-        setCompanyLogo(data.companyLogo);
-      } else {
-        setCompanyLogo(null);
-      }
-    });
+    const unsubscribeUsers = dataService.subscribeToUsers(data => { setUsers(data); setUsersLoaded(true); });
+    const unsubscribeStandards = dataService.subscribeToStandards(data => setStandards(data));
+    const unsubscribePlants = dataService.subscribeToPlants(data => setPlants(data));
+    const unsubscribeSettings = dataService.subscribeToSettings(data => setCompanyLogo(data?.companyLogo || null));
 
     return () => {
       clearTimeout(safetyTimer);
       unsubscribeActivities();
       unsubscribeUsers();
       unsubscribeStandards();
+      unsubscribePlants();
       unsubscribeSettings();
     };
   }, []);
 
-  const handleUpdateStandard = async (std: StandardDefinition) => {
-    await dataService.updateStandard(std);
-  };
+  const handleUpdateStandard = async (std: StandardDefinition) => await dataService.updateStandard(std);
+  const handleLogoChange = (logo: string | null) => setCompanyLogo(logo);
+  const handleLogin = (user: User) => { setCurrentUser(user); setActiveView('dashboard'); };
+  const handleLogout = () => { setCurrentUser(null); setActiveView('dashboard'); };
+  const handleAddActivity = async (newActivity: Activity) => await dataService.addActivity(newActivity);
+  const handleUpdateActivity = async (updatedActivity: Activity) => await dataService.updateActivity(updatedActivity);
+  const handleDeleteActivity = async (id: string) => { if (window.confirm("¿Está seguro?")) await dataService.deleteActivity(id); };
+  const handleAddUser = async (u: User) => await dataService.addUser(u);
+  const handleUpdateUser = async (u: User) => await dataService.updateUser(u);
+  const handleDeleteUser = async (id: string) => { if (window.confirm("¿Está seguro?")) await dataService.deleteUser(id); };
+  const handleAddPlant = async (p: Plant) => await dataService.addPlant(p);
+  const handleUpdatePlant = async (p: Plant) => await dataService.updatePlant(p);
+  const handleDeletePlant = async (id: string) => { if (window.confirm("¿Desea eliminar esta planta?")) await dataService.deletePlant(id); };
 
-  const handleLogoChange = (logo: string | null) => {
-    setCompanyLogo(logo);
-  };
+  if (isLoading) return <div className="flex h-screen items-center justify-center space-y-4 flex-col"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div><p>Cargando...</p></div>;
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    setActiveView('dashboard');
-  };
+  if (dbError && USE_CLOUD_DB) return <div className="flex h-screen items-center justify-center p-4 text-center flex-col"><Database size={48} className="mb-4 text-red-600" /><h2 className="text-xl font-bold">Error de Conexión</h2><button onClick={() => window.location.reload()} className="mt-4 bg-slate-800 text-white px-6 py-2 rounded-lg">Recargar</button></div>;
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setActiveView('dashboard');
-  };
-
-  const handleAddActivity = async (newActivity: Activity) => {
-    await dataService.addActivity(newActivity);
-  };
-
-  const handleUpdateActivity = async (updatedActivity: Activity) => {
-    await dataService.updateActivity(updatedActivity);
-  };
-
-  const handleDeleteActivity = async (id: string) => {
-    if (window.confirm("¿Está seguro de eliminar este requisito?")) {
-      await dataService.deleteActivity(id);
-    }
-  };
-
-  const handleAddUser = async (newUser: User) => {
-    await dataService.addUser(newUser);
-  };
-
-  const handleUpdateUser = async (updatedUser: User) => {
-    await dataService.updateUser(updatedUser);
-  };
-
-  const handleDeleteUser = async (id: string) => {
-    if (window.confirm("¿Está seguro de eliminar este usuario?")) {
-      await dataService.deleteUser(id);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium space-y-4">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div>
-        <p>Conectando con {USE_CLOUD_DB ? 'Firebase Cloud' : 'Datos Locales'}...</p>
-      </div>
-    );
-  }
-
-  if (dbError && USE_CLOUD_DB) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-        <div className="bg-white max-w-lg w-full rounded-2xl shadow-xl overflow-hidden border border-red-100">
-          <div className="bg-red-600 p-6 text-white text-center">
-             <Database size={48} className="mx-auto mb-2 opacity-90" />
-             <h2 className="text-2xl font-bold">Falta Base de Datos</h2>
-             <p className="text-red-100 mt-1 text-sm">El sistema está configurado pero no encuentra la base de datos.</p>
-          </div>
-           <div className="p-8 space-y-6">
-             <p className="text-slate-600">Por favor, habilita Firestore en la consola de Firebase.</p>
-             <button 
-              onClick={() => window.location.reload()}
-              className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-6 rounded-lg w-full"
-             >
-               Recargar Página
-             </button>
-           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return (
-      <Login onLogin={handleLogin} companyLogo={companyLogo} users={users} />
-    );
-  }
+  if (!currentUser) return <Login onLogin={handleLogin} companyLogo={companyLogo} users={users} />;
 
   const renderContent = () => {
-    // Check if dynamic standard view is requested
     if (activeView.startsWith('std-')) {
       const stdType = activeView.replace('std-', '');
-      return (
-        <StandardView 
-          standard={stdType} 
-          activities={activities} 
-          onUpdateActivity={handleUpdateActivity}
-          currentYear={currentYear}
-          setCurrentYear={setCurrentYear}
-          currentUser={currentUser}
-        />
-      );
+      return <StandardView standard={stdType} activities={activities} onUpdateActivity={handleUpdateActivity} currentYear={currentYear} setCurrentYear={setCurrentYear} currentUser={currentUser} />;
     }
-
     switch (activeView) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'evidence-dashboard':
-        return (
-          <EvidenceDashboard 
-            activities={activities}
-            currentUser={currentUser}
-            onUpdateActivity={handleUpdateActivity}
-          />
-        );
-      case 'norms':
-        return (
-          <StandardManager 
-            standards={standards} 
-            onUpdateStandard={handleUpdateStandard}
-            currentUser={currentUser}
-          />
-        );
-      case 'requirements':
-        return (
-          <RequirementsManager 
-            activities={activities}
-            onAdd={handleAddActivity}
-            onUpdate={handleUpdateActivity}
-            onDelete={handleDeleteActivity}
-            standardsList={standards}
-          />
-        );
-      case 'users':
-        return (
-          <UserManagement 
-             users={users}
-             onAddUser={handleAddUser}
-             onUpdateUser={handleUpdateUser}
-             onDeleteUser={handleDeleteUser}
-          />
-        );
-      case 'settings':
-        return (
-          <SystemSettings 
-            currentLogo={companyLogo}
-            onLogoChange={handleLogoChange}
-          />
-        );
-      default:
-        return <Dashboard />;
+      case 'dashboard': return <Dashboard />;
+      case 'evidence-dashboard': return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handleUpdateActivity} />;
+      case 'norms': return <StandardManager standards={standards} onUpdateStandard={handleUpdateStandard} currentUser={currentUser} />;
+      case 'requirements': return <RequirementsManager activities={activities} onAdd={handleAddActivity} onUpdate={handleUpdateActivity} onDelete={handleDeleteActivity} standardsList={standards} />;
+      case 'plants': return <PlantManager plants={plants} onAdd={handleAddPlant} onUpdate={handleUpdatePlant} onDelete={handleDeletePlant} />;
+      case 'users': return <UserManagement users={users} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />;
+      case 'settings': return <SystemSettings currentLogo={companyLogo} onLogoChange={handleLogoChange} />;
+      default: return <Dashboard />;
     }
   };
 
-  return (
-    <Layout 
-      activeView={activeView} 
-      setActiveView={setActiveView} 
-      currentUser={currentUser}
-      onLogout={handleLogout}
-      companyLogo={companyLogo}
-      isCloudConnected={isCloudConnected}
-      standards={standards}
-    >
-      {renderContent()}
-    </Layout>
-  );
+  return <Layout activeView={activeView} setActiveView={setActiveView} currentUser={currentUser} onLogout={handleLogout} companyLogo={companyLogo} isCloudConnected={isCloudConnected} standards={standards}>{renderContent()}</Layout>;
 }
 
 export default App;

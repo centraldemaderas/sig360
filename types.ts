@@ -78,6 +78,14 @@ export interface AreaStats {
   previousCompliance: number;
 }
 
+export interface Plant {
+  id: string;
+  name: string;
+  location: string;
+  isMain?: boolean;
+  description?: string;
+}
+
 export interface Activity {
   id: string;
   clause: string; 
@@ -85,14 +93,15 @@ export interface Activity {
   clauseTitle: string; 
   description: string; 
   contextualization: string; 
-  relatedQuestions: string; // This stores the "Tarea Específica"
-  standards: string[]; // Dynamic standards
+  relatedQuestions: string; 
+  standards: string[]; 
   responsibleArea: string;
   periodicity: Periodicity; 
   compliance2024: boolean; 
   compliance2025: boolean; 
   plans?: { [year: number]: MonthlyExecution[] };
   monthlyPlan?: MonthlyExecution[];
+  plantIds: string[]; // Requisito multi-planta
 }
 
 export interface StandardDefinition {
@@ -123,7 +132,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  assignedArea?: string; // New field to link users to processes
+  assignedArea?: string; 
   password?: string;
   notifications?: NotificationSettings;
 }

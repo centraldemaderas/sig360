@@ -26,7 +26,8 @@ import {
   ChevronDown,
   ChevronUp,
   Shield,
-  Truck
+  Truck,
+  Factory
 } from 'lucide-react';
 import { User, UserRole, Notification, StandardDefinition } from '../types';
 import { dataService } from '../services/dataService';
@@ -81,7 +82,6 @@ export const Layout: React.FC<LayoutProps> = ({
     return Briefcase;
   };
 
-  // Main items: Dashboard + Dynamic Standards
   const mainItems = [
     { id: 'dashboard', label: 'Tablero de Control', icon: LayoutDashboard },
     ...standards.map(std => ({
@@ -98,6 +98,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const adminItems = [
     { id: 'norms', label: 'Gestión de Normas', icon: BookOpen },
     { id: 'requirements', label: 'Requisitos y Matriz', icon: Settings },
+    { id: 'plants', label: 'Gestión de Plantas', icon: Factory },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'settings', label: 'Configuración Global', icon: Sliders },
   ];
@@ -223,7 +224,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 )}
               </button>
               
-              <div className={`mt-1 space-y-1 overflow-hidden transition-all duration-300 ${isAdminExpanded ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className={`mt-1 space-y-1 overflow-hidden transition-all duration-300 ${isAdminExpanded ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
                 {adminItems.map((item) => (
                   <button
                     key={item.id}

@@ -1,7 +1,7 @@
 
 import { db, USE_CLOUD_DB } from '../firebaseConfig';
 import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, getDocs, where, orderBy, limit } from 'firebase/firestore';
-import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole } from '../types';
+import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole, Plant } from '../types';
 import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS } from '../constants';
 
 const COLL_ACTIVITIES = 'activities';
@@ -9,10 +9,27 @@ const COLL_USERS = 'users';
 const COLL_STANDARDS = 'standards';
 const COLL_SETTINGS = 'settings';
 const COLL_NOTIFICATIONS = 'notifications';
+const COLL_PLANTS = 'plants';
 const DOC_SETTINGS_GENERAL = 'general';
 
 class DataService {
   
+  private cleanPlantIds(pids: string[] | undefined): string[] {
+    if (!pids || !Array.isArray(pids)) return ['MOSQUERA'];
+    
+    // Normalización agresiva: Trim, Uppercase y mapeo de variaciones de Mosquera
+    const cleaned = pids
+      .map(id => String(id || '').trim().toUpperCase())
+      .map(id => (id === 'PLT-MOSQUERA' || id === 'MOSQUERA') ? 'MOSQUERA' : id)
+      .filter(id => id !== '');
+    
+    // Requisito: Siempre debe estar Mosquera (Matriz)
+    if (!cleaned.includes('MOSQUERA')) cleaned.push('MOSQUERA');
+    
+    // Eliminar duplicados reales
+    return Array.from(new Set(cleaned));
+  }
+
   subscribeToActivities(onUpdate: (data: Activity[]) => void, onError?: (error: any) => void) {
     if (USE_CLOUD_DB && db) {
       const q = query(collection(db, COLL_ACTIVITIES));
@@ -20,7 +37,12 @@ class DataService {
         (querySnapshot) => {
           const activities: Activity[] = [];
           querySnapshot.forEach((doc) => {
-            activities.push({ ...doc.data(), id: doc.id } as Activity);
+            const data = doc.data() as Activity;
+            activities.push({ 
+              ...data, 
+              id: doc.id, 
+              plantIds: this.cleanPlantIds(data.plantIds) 
+            } as Activity);
           });
           onUpdate(activities);
         },
@@ -33,9 +55,13 @@ class DataService {
       const load = () => {
         const saved = localStorage.getItem('app_activities');
         if (saved) {
-          onUpdate(JSON.parse(saved));
+          const parsed = JSON.parse(saved).map((a: any) => ({ 
+            ...a, 
+            plantIds: this.cleanPlantIds(a.plantIds) 
+          }));
+          onUpdate(parsed);
         } else {
-          onUpdate(MOCK_ACTIVITIES_GERENCIA);
+          onUpdate(MOCK_ACTIVITIES_GERENCIA.map(a => ({ ...a, plantIds: ['MOSQUERA'] })));
         }
       };
       load();
@@ -107,7 +133,6 @@ class DataService {
       return onSnapshot(q, (snapshot) => {
         const stds: StandardDefinition[] = [];
         snapshot.forEach(doc => stds.push({ ...doc.data(), id: doc.id } as StandardDefinition));
-        // Sort for consistent sidebar order
         stds.sort((a, b) => a.type.localeCompare(b.type));
         onUpdate(stds);
       });
@@ -119,6 +144,37 @@ class DataService {
         } else {
           onUpdate([]);
         }
+      };
+      load();
+      const listener = () => load();
+      window.addEventListener('local-data-changed', listener);
+      return () => window.removeEventListener('local-data-changed', listener);
+    }
+  }
+
+  subscribeToPlants(onUpdate: (data: Plant[]) => void) {
+    if (USE_CLOUD_DB && db) {
+      const q = query(collection(db, COLL_PLANTS));
+      return onSnapshot(q, (snapshot) => {
+        const plants: Plant[] = [];
+        snapshot.forEach(doc => plants.push({ ...doc.data(), id: doc.id } as Plant));
+        plants.sort((a, b) => {
+          if (a.isMain) return -1;
+          if (b.isMain) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        onUpdate(plants);
+      });
+    } else {
+      const load = () => {
+        const saved = localStorage.getItem('app_plants');
+        let plants = saved ? JSON.parse(saved) : [];
+        plants.sort((a: Plant, b: Plant) => {
+          if (a.isMain) return -1;
+          if (b.isMain) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        onUpdate(plants);
       };
       load();
       const listener = () => load();
@@ -204,36 +260,25 @@ class DataService {
   }
 
   async addActivity(activity: Activity) {
+    const cleanAct = { ...activity, plantIds: this.cleanPlantIds(activity.plantIds) };
     if (USE_CLOUD_DB && db) {
-      try {
-        const { id, ...data } = activity; 
-        const sanitized = this.cleanData(data);
-        await setDoc(doc(db, COLL_ACTIVITIES, activity.id), sanitized);
-      } catch (error) {
-        console.error("Error adding activity:", error);
-        throw error;
-      }
+      const { id, ...data } = cleanAct; 
+      await setDoc(doc(db, COLL_ACTIVITIES, cleanAct.id), this.cleanData(data));
     } else {
       const current = this.getLocalActivities();
-      const updated = [...current, activity];
+      const updated = [...current, cleanAct];
       this.saveLocalActivities(updated);
     }
   }
 
   async updateActivity(activity: Activity) {
+    const cleanAct = { ...activity, plantIds: this.cleanPlantIds(activity.plantIds) };
     if (USE_CLOUD_DB && db) {
-      try {
-        const { id, ...data } = activity;
-        const sanitized = this.cleanData(data);
-        const docRef = doc(db, COLL_ACTIVITIES, id);
-        await updateDoc(docRef, sanitized);
-      } catch (error) {
-        console.error("Error updating activity:", error);
-        throw error;
-      }
+      const { id, ...data } = cleanAct;
+      await updateDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(data));
     } else {
       const current = this.getLocalActivities();
-      const updated = current.map(a => a.id === activity.id ? activity : a);
+      const updated = current.map(a => a.id === cleanAct.id ? cleanAct : a);
       this.saveLocalActivities(updated);
     }
   }
@@ -243,33 +288,27 @@ class DataService {
       await deleteDoc(doc(db, COLL_ACTIVITIES, id));
     } else {
       const current = this.getLocalActivities();
-      const updated = current.filter(a => a.id !== id);
-      this.saveLocalActivities(updated);
+      this.saveLocalActivities(current.filter(a => a.id !== id));
     }
   }
 
   async addUser(user: User) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = user;
-      const sanitized = this.cleanData(data);
-      await setDoc(doc(db, COLL_USERS, user.id), sanitized);
+      await setDoc(doc(db, COLL_USERS, user.id), this.cleanData(data));
     } else {
       const current = this.getLocalUsers();
-      const updated = [...current, user];
-      this.saveLocalUsers(updated);
+      this.saveLocalUsers([...current, user]);
     }
   }
 
   async updateUser(user: User) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = user;
-      const sanitized = this.cleanData(data);
-      const docRef = doc(db, COLL_USERS, id);
-      await updateDoc(docRef, sanitized);
+      await updateDoc(doc(db, COLL_USERS, id), this.cleanData(data));
     } else {
       const current = this.getLocalUsers();
-      const updated = current.map(u => u.id === user.id ? user : u);
-      this.saveLocalUsers(updated);
+      this.saveLocalUsers(current.map(u => u.id === user.id ? user : u));
     }
   }
 
@@ -278,61 +317,76 @@ class DataService {
       await deleteDoc(doc(db, COLL_USERS, id));
     } else {
       const current = this.getLocalUsers();
-      const updated = current.filter(u => u.id !== id);
-      this.saveLocalUsers(updated);
+      this.saveLocalUsers(current.filter(u => u.id !== id));
+    }
+  }
+
+  async addPlant(plant: Plant) {
+    if (USE_CLOUD_DB && db) {
+      const { id, ...data } = plant;
+      await setDoc(doc(db, COLL_PLANTS, id), this.cleanData(data));
+    } else {
+      const current = this.getLocalPlants();
+      this.saveLocalPlants([...current, plant]);
+    }
+  }
+
+  async updatePlant(plant: Plant) {
+    if (USE_CLOUD_DB && db) {
+      const { id, ...data } = plant;
+      await updateDoc(doc(db, COLL_PLANTS, id), this.cleanData(data));
+    } else {
+      const current = this.getLocalPlants();
+      this.saveLocalPlants(current.map(p => p.id === plant.id ? plant : p));
+    }
+  }
+
+  async deletePlant(id: string) {
+    if (USE_CLOUD_DB && db) {
+      await deleteDoc(doc(db, COLL_PLANTS, id));
+    } else {
+      const current = this.getLocalPlants();
+      this.saveLocalPlants(current.filter(p => p.id !== id));
     }
   }
 
   async addStandard(std: StandardDefinition) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = std;
-      const sanitized = this.cleanData(data);
-      await setDoc(doc(db, COLL_STANDARDS, id), sanitized);
+      await setDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
     } else {
       const current = this.getLocalStandards();
-      const updated = [...current, std];
-      this.saveLocalStandards(updated);
+      this.saveLocalStandards([...current, std]);
     }
   }
 
   async updateStandard(std: StandardDefinition) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = std;
-      const sanitized = this.cleanData(data);
-      await setDoc(doc(db, COLL_STANDARDS, id), sanitized);
+      await setDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
     } else {
       const current = this.getLocalStandards();
-      const updated = current.map(s => s.id === std.id ? std : s);
-      this.saveLocalStandards(updated);
+      this.saveLocalStandards(current.map(s => s.id === std.id ? std : s));
     }
   }
 
   async updateSettings(settings: AppSettings) {
     if (USE_CLOUD_DB && db) {
-      const sanitized = this.cleanData(settings);
-      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), sanitized);
+      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), this.cleanData(settings));
     } else {
-      if (settings.companyLogo) {
-        localStorage.setItem('company_logo', settings.companyLogo);
-      } else {
-        localStorage.removeItem('company_logo');
-      }
+      if (settings.companyLogo) localStorage.setItem('company_logo', settings.companyLogo);
+      else localStorage.removeItem('company_logo');
       window.dispatchEvent(new Event('local-data-changed'));
     }
   }
 
   private cleanData(obj: any): any {
-    if (Array.isArray(obj)) {
-      return obj.map(item => this.cleanData(item));
-    } else if (obj !== null && typeof obj === 'object') {
+    if (Array.isArray(obj)) return obj.map(item => this.cleanData(item));
+    else if (obj !== null && typeof obj === 'object') {
       const newObj: any = {};
       Object.keys(obj).forEach(key => {
         const value = obj[key];
-        if (value === undefined) {
-          newObj[key] = null;
-        } else {
-          newObj[key] = this.cleanData(value);
-        }
+        newObj[key] = value === undefined ? null : this.cleanData(value);
       });
       return newObj;
     }
@@ -341,7 +395,7 @@ class DataService {
 
   private getLocalActivities(): Activity[] {
     const s = localStorage.getItem('app_activities');
-    return s ? JSON.parse(s) : MOCK_ACTIVITIES_GERENCIA;
+    return s ? JSON.parse(s).map((a: any) => ({ ...a, plantIds: this.cleanPlantIds(a.plantIds) })) : MOCK_ACTIVITIES_GERENCIA.map(a => ({ ...a, plantIds: ['MOSQUERA'] }));
   }
 
   private saveLocalActivities(data: Activity[]) {
@@ -369,6 +423,16 @@ class DataService {
     window.dispatchEvent(new Event('local-data-changed'));
   }
 
+  private getLocalPlants(): Plant[] {
+    const s = localStorage.getItem('app_plants');
+    return s ? JSON.parse(s) : [];
+  }
+
+  private saveLocalPlants(data: Plant[]) {
+    localStorage.setItem('app_plants', JSON.stringify(data));
+    window.dispatchEvent(new Event('local-data-changed'));
+  }
+
   public async seedInitialData() {
     if (!USE_CLOUD_DB || !db) throw new Error("No hay conexión a la Nube");
     
@@ -377,37 +441,12 @@ class DataService {
 
     for (const act of MOCK_ACTIVITIES_GERENCIA) {
        const { id, ...data } = act;
-       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(data)));
+       const activityWithPlant = { ...data, plantIds: ['MOSQUERA'] };
+       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(activityWithPlant)));
     }
 
     const seedUsers: User[] = [
-      {
-        id: 'u-david',
-        name: 'David Marín',
-        email: 'david@centralmaderas.com',
-        role: UserRole.LEADER,
-        assignedArea: 'Gerencia',
-        password: '123',
-        notifications: { notifyOnRejection: true, notifyOnApproval: true, notifyOnNewUpload: false, emailEnabled: true }
-      },
-      {
-        id: 'u-sandra',
-        name: 'Sandra Barbosa',
-        email: 'sandra@centralmaderas.com',
-        role: UserRole.LEADER,
-        assignedArea: 'HSEQ',
-        password: '123',
-        notifications: { notifyOnRejection: true, notifyOnApproval: true, notifyOnNewUpload: false, emailEnabled: true }
-      },
-      {
-        id: 'u-admin',
-        name: 'Administrador SIG',
-        email: 'admin@centralmaderas.com',
-        role: UserRole.ADMIN,
-        assignedArea: 'HSEQ',
-        password: '123',
-        notifications: { notifyOnRejection: true, notifyOnApproval: true, notifyOnNewUpload: true, emailEnabled: true }
-      }
+      { id: 'u-admin', name: 'Administrador SIG', email: 'admin@centralmaderas.com', role: UserRole.ADMIN, assignedArea: 'HSEQ', password: '123', notifications: { notifyOnRejection: true, notifyOnApproval: true, notifyOnNewUpload: true, emailEnabled: true } }
     ];
 
     for (const user of seedUsers) {
@@ -424,6 +463,20 @@ class DataService {
 
     for (const std of defaultStandards) {
       batchPromises.push(setDoc(doc(db, COLL_STANDARDS, std.id), this.cleanData(std)));
+    }
+
+    const initialPlants: Plant[] = [
+      { id: 'MOSQUERA', name: 'Mosquera', location: 'Cundinamarca', isMain: true, description: 'Sede Matriz Principal' },
+      { id: 'plt-cartagena', name: 'Cartagena', location: 'Bolívar', isMain: false, description: 'Planta de Producción Costa' },
+      { id: 'plt-cali', name: 'Cali', location: 'Valle del Cauca', isMain: false, description: 'Planta de Producción Occidente' },
+      { id: 'plt-yali', name: 'Yali', location: 'Antioquia', isMain: false, description: 'Planta de Extracción' },
+      { id: 'plt-diluvio', name: 'Diluvio', location: 'Meta', isMain: false, description: 'Planta Operativa' },
+      { id: 'plt-socialway', name: 'SocialWay', location: 'N/A', isMain: false, description: 'Unidad de Negocio Social' },
+      { id: 'plt-ecocentral', name: 'EcoCentral', location: 'N/A', isMain: false, description: 'Unidad de Reciclaje' }
+    ];
+
+    for (const plt of initialPlants) {
+      batchPromises.push(setDoc(doc(db, COLL_PLANTS, plt.id), this.cleanData(plt)));
     }
 
     await Promise.all(batchPromises);

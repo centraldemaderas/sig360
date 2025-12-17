@@ -83,7 +83,8 @@ export const MOCK_ACTIVITIES_GERENCIA: Activity[] = [
     plans: {
       2025: generatePlan(Periodicity.ANNUAL, true),
       2026: generatePlan(Periodicity.ANNUAL, false)
-    }
+    },
+    plantIds: ['MOSQUERA']
   },
   {
     id: 'GER-002',
@@ -101,7 +102,8 @@ export const MOCK_ACTIVITIES_GERENCIA: Activity[] = [
     plans: {
       2025: generatePlan(Periodicity.ANNUAL, true),
       2026: generatePlan(Periodicity.ANNUAL, false)
-    }
+    },
+    plantIds: ['MOSQUERA']
   },
   {
     id: 'GER-003',
@@ -119,7 +121,8 @@ export const MOCK_ACTIVITIES_GERENCIA: Activity[] = [
     plans: {
       2025: generatePlan(Periodicity.ANNUAL, true),
       2026: generatePlan(Periodicity.ANNUAL, false)
-    }
+    },
+    plantIds: ['MOSQUERA']
   },
   {
     id: 'GER-004',
@@ -137,7 +140,8 @@ export const MOCK_ACTIVITIES_GERENCIA: Activity[] = [
     plans: {
       2025: generatePlan(Periodicity.MONTHLY, true),
       2026: generatePlan(Periodicity.MONTHLY, false)
-    }
+    },
+    plantIds: ['MOSQUERA']
   }
 ];
 
