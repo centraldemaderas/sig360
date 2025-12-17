@@ -45,8 +45,8 @@ export const Layout: React.FC<LayoutProps> = ({
   companyLogo,
   isCloudConnected = false 
 }) => {
-  // Mobile-first approach: Start collapsed if screen is narrow (mobile)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth > 1024 : true);
+  // Mobile-first approach: Start collapsed if screen is mobile or tablet (< 1024px)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -93,12 +93,12 @@ export const Layout: React.FC<LayoutProps> = ({
           isSidebarOpen ? 'w-64' : 'w-20'
         } bg-white transition-all duration-300 flex flex-col shadow-xl z-[1000] border-r border-slate-200`}
       >
-        <div className="h-24 flex items-center justify-center border-b border-slate-100 p-2 overflow-hidden bg-slate-50/30">
+        <div className="h-28 flex items-center justify-center border-b border-slate-100 p-2 overflow-hidden bg-slate-50/30">
           {isSidebarOpen ? (
             companyLogo ? (
-              <img src={companyLogo} alt="Company Logo" className="h-14 object-contain transition-all duration-300" />
+              <img src={companyLogo} alt="Company Logo" className="h-20 object-contain transition-all duration-300" />
             ) : (
-              <svg viewBox="0 0 280 80" className="h-12 w-auto transition-all duration-300">
+              <svg viewBox="0 0 280 80" className="h-16 w-auto transition-all duration-300">
                 <g strokeLinecap="round" strokeLinejoin="round" fill="none">
                   <path d="M 10 60 L 30 30 L 50 60" stroke="#B91C1C" strokeWidth="8" />
                   <path d="M 30 60 L 50 30 L 70 60" stroke="#1F2937" strokeWidth="8" />
@@ -113,9 +113,9 @@ export const Layout: React.FC<LayoutProps> = ({
             )
           ) : (
              companyLogo ? (
-               <img src={companyLogo} alt="Logo" className="h-12 w-12 object-contain rounded transition-all" />
+               <img src={companyLogo} alt="Logo" className="h-14 w-14 object-contain rounded transition-all" />
              ) : (
-                <svg viewBox="0 0 100 80" className="h-12 w-auto transition-all">
+                <svg viewBox="0 0 100 80" className="h-14 w-auto transition-all">
                    <g strokeLinecap="round" strokeLinejoin="round" fill="none">
                     <path d="M 10 60 L 30 30 L 50 60" stroke="#B91C1C" strokeWidth="8" />
                     <path d="M 30 60 L 50 30 L 70 60" stroke="#1F2937" strokeWidth="8" />

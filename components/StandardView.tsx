@@ -7,7 +7,7 @@ import {
   HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, 
   Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, 
   MessageSquare, Clock, History, User as UserIcon, Send, ShieldCheck, 
-  CheckCircle, Info, BookOpen, Target, Briefcase
+  CheckCircle, Info, BookOpen, Target, Briefcase, Loader2
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 
@@ -36,7 +36,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
   const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
   
-  // Form states
+  // Form and Loading states
+  const [isSaving, setIsSaving] = useState(false);
   const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [adminComment, setAdminComment] = useState('');
@@ -58,6 +59,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setLinkInput('');
     setAdminComment('');
     setUpdateNote('');
+    setIsSaving(false);
   };
 
   const openInfoModal = (activityId: string) => {
@@ -69,6 +71,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const file = e.target.files?.[0];
     if (!file || !activeActivityId || activeMonthIndex === null) return;
 
+    setIsSaving(true);
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
@@ -79,6 +82,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
 
   const handleLinkSubmit = () => {
     if (!linkInput.trim() || !activeActivityId || activeMonthIndex === null) return;
+    setIsSaving(true);
     updateActivityEvidence(linkInput, 'LINK', 'Enlace OneDrive/Web');
   };
 
@@ -112,12 +116,16 @@ export const StandardView: React.FC<StandardViewProps> = ({
       const existingItem = currentYearPlan[activeMonthIndex];
       const existingHistory = existingItem.evidence?.history || [];
 
+      // If an Admin is uploading, we could potentially set status to APPROVED immediately
+      // But keeping it PENDING for traceability is often better.
+      const initialStatus = 'PENDING';
+
       const updateLog: CommentLog = {
         id: `log-upd-${Date.now()}`,
         text: updateNote || (existingItem.evidence ? 'Se cargó una nueva versión de la evidencia para revisión.' : 'Carga inicial de evidencia.'),
         author: currentUser.name,
         date: new Date().toLocaleString(),
-        status: 'PENDING'
+        status: initialStatus
       };
 
       const newYearPlan = currentYearPlan.map((item, index) => {
@@ -131,7 +139,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
             fileName,
             uploadedBy: currentUser.name,
             uploadedAt: new Date().toLocaleString(),
-            status: 'PENDING',
+            status: initialStatus,
             adminComment: updateLog.text,
             history: [updateLog, ...existingHistory]
           } as Evidence
@@ -146,10 +154,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
         }
       };
 
-      onUpdateActivity(updatedActivity);
+      await onUpdateActivity(updatedActivity);
       
       const allUsers = await dataService.getUsersOnce();
-      // Targeted Notification: Admins and Leaders associated with THIS specific area
       const targetUsers = allUsers.filter(u => 
         u.role === UserRole.ADMIN || (u.assignedArea === activityToUpdate.responsibleArea)
       );
@@ -165,12 +172,14 @@ export const StandardView: React.FC<StandardViewProps> = ({
         });
       }
 
+      setIsSaving(false);
       setModalOpen(false);
   };
 
   const handleAdminVerification = async (status: 'APPROVED' | 'REJECTED') => {
     if (!activeActivityId || activeMonthIndex === null) return;
     
+    setIsSaving(true);
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
     
@@ -209,10 +218,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
       }
     };
 
-    onUpdateActivity(updatedActivity);
+    await onUpdateActivity(updatedActivity);
 
     const allUsers = await dataService.getUsersOnce();
-    // Targeted Notification: Notify ALL users linked to the area of the activity
     const areaUsers = allUsers.filter(u => u.assignedArea === activityToUpdate.responsibleArea);
     
     for (const targetUser of areaUsers) {
@@ -228,6 +236,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       });
     }
 
+    setIsSaving(false);
     setModalOpen(false);
   };
 
@@ -458,7 +467,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </table>
       </div>
 
-      {/* INFO MODAL: COMPACT AND TOP-POSITIONED */}
+      {/* INFO MODAL */}
       {infoModalOpen && activeActivity && (
         <div className="fixed inset-0 bg-slate-900/80 flex items-start justify-center z-[9999] p-4 pt-12 backdrop-blur-md overflow-hidden">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col animate-in fade-in slide-in-from-top-8 duration-500 border border-slate-200">
@@ -481,7 +490,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
              </div>
              
              <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin bg-white flex-1">
-                {/* Description - FULL CONTENT */}
                 <div className="space-y-3">
                    <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">
                       <ShieldCheck size={14} className="mr-2 text-slate-300" /> Descripción Oficial Integra
@@ -491,7 +499,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                 </div>
 
-                {/* Context - FULL CONTENT */}
                 <div className="space-y-3">
                    <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-[0.2em]">
                       <Target size={14} className="mr-2" /> Explicación Detallada
@@ -501,7 +508,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                 </div>
 
-                {/* Responsible & Periodicity Grid */}
                 <div className="grid grid-cols-2 gap-4">
                    <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center">
                       <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0">
@@ -523,10 +529,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                 </div>
 
-                {/* Specific Task - FULL CONTENT */}
                 <div className="space-y-3">
                    <div className="flex items-center text-amber-600 font-black text-[9px] uppercase tracking-[0.2em]">
-                      <CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio
+                      <CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio de Cumplimiento
                    </div>
                    <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-100/50 text-[13px] text-amber-950 leading-relaxed whitespace-pre-wrap font-black shadow-inner">
                       {activeActivity.relatedQuestions}
@@ -546,18 +551,31 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </div>
       )}
 
-      {/* VERIFICATION MODAL: COMPACT AND TOP-POSITIONED */}
+      {/* VERIFICATION / UPLOAD MODAL */}
       {modalOpen && activeActivity && activeMonthIndex !== null && (
         <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-[9000] p-4 pt-12 backdrop-blur-sm overflow-hidden">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300 border border-slate-200">
+            {/* Modal Loading Overlay */}
+            {isSaving && (
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-[9999] flex flex-col items-center justify-center space-y-4">
+                 <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                 <p className="text-sm font-black text-blue-900 uppercase tracking-widest">Sincronizando Datos...</p>
+              </div>
+            )}
+
             <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-xl font-black text-slate-900 flex items-center tracking-tight">
-                   {currentUser.role === UserRole.ADMIN ? 'Verificación Auditora' : 'Evidencias del Sistema'}
+                   {activeEvidence ? 'Verificación de Evidencia' : 'Carga de Evidencia'}
                 </h3>
                 <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{MONTHS[activeMonthIndex]} {currentYear} • {activeActivity.clauseTitle}</p>
               </div>
-              <button onClick={() => setModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
+              <button 
+                onClick={() => !isSaving && setModalOpen(false)} 
+                className={`p-2 rounded-full transition-colors ${isSaving ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+              >
+                <X size={24} />
+              </button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
@@ -590,7 +608,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                 </div>
               )}
 
-              {/* BITACORA */}
+              {/* TRACEABILITY */}
               {activeEvidence && activeEvidence.history && activeEvidence.history.length > 0 && (
                 <div className="space-y-4">
                    <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
@@ -619,7 +637,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                 </div>
               )}
 
-              {/* ADMIN ACTION - COMPACTED BUTTONS */}
+              {/* ADMIN ACTION: ONLY IF EVIDENCE EXISTS AND IS NOT YET APPROVED */}
               {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status !== 'APPROVED' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
@@ -627,34 +645,34 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                    <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:border-blue-500 outline-none min-h-[100px] bg-slate-50 transition-all font-bold placeholder:text-slate-300" placeholder="Escriba aquí los hallazgos de la revisión..." />
                    <div className="flex space-x-3">
-                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-white border-2 border-orange-200 text-orange-700 py-2.5 rounded-2xl font-black text-xs hover:bg-orange-50 flex items-center justify-center shadow-md transition-all active:scale-95"><ThumbsDown size={18} className="mr-2.5" /> Rechazar</button>
-                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-2.5 rounded-2xl font-black text-xs hover:bg-green-700 flex items-center justify-center shadow-xl transition-all active:scale-95"><ThumbsUp size={18} className="mr-2.5" /> Verificar</button>
+                      <button onClick={() => handleAdminVerification('REJECTED')} disabled={isSaving} className="flex-1 bg-white border-2 border-orange-200 text-orange-700 py-2.5 rounded-2xl font-black text-xs hover:bg-orange-50 flex items-center justify-center shadow-md transition-all active:scale-95 disabled:opacity-50"><ThumbsDown size={18} className="mr-2.5" /> Rechazar</button>
+                      <button onClick={() => handleAdminVerification('APPROVED')} disabled={isSaving} className="flex-1 bg-green-600 text-white py-2.5 rounded-2xl font-black text-xs hover:bg-green-700 flex items-center justify-center shadow-xl transition-all active:scale-95 disabled:opacity-50"><ThumbsUp size={18} className="mr-2.5" /> Verificar</button>
                    </div>
                 </div>
               )}
 
-              {/* LEADER UPLOAD / RE-UPLOAD */}
-              {(currentUser.role === UserRole.LEADER || !activeEvidence || activeEvidence?.status === 'REJECTED') && (
+              {/* UPLOAD SECTION: Always visible if not approved */}
+              {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.LEADER) && (!activeEvidence || activeEvidence?.status !== 'APPROVED') && (
                  <div className="space-y-4 pt-4 border-t border-slate-100">
                     <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                         <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center">
                           <RefreshCw size={14} className="mr-2 text-blue-600" /> 
-                          {activeEvidence ? 'Corregir Evidencia' : 'Gestionar Carga'}
+                          {activeEvidence ? 'Corregir o Actualizar Evidencia' : 'Cargar Evidencia'}
                         </h4>
                         <textarea 
                           value={updateNote}
                           onChange={e => setUpdateNote(e.target.value)}
-                          placeholder="Descripción del documento..."
+                          placeholder="Descripción del documento o aclaración sobre la carga..."
                           className="w-full border border-slate-200 rounded-xl p-4 text-sm mb-4 outline-none focus:border-blue-500 bg-white min-h-[100px] transition-all font-bold placeholder:text-slate-300"
                         />
 
                         {!uploadType ? (
                           <div className="grid grid-cols-2 gap-4">
-                              <button onClick={() => setUploadType('link')} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-blue-200 hover:bg-blue-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95">
-                                <Cloud size={20} className="text-blue-500 mr-2" /> Enlace
+                              <button onClick={() => setUploadType('link')} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-blue-200 hover:bg-blue-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50">
+                                <Cloud size={20} className="text-blue-500 mr-2" /> Enlace Web
                               </button>
-                              <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-slate-300 hover:bg-slate-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95">
-                                <ImageIcon size={20} className="text-slate-500 mr-2" /> Archivo
+                              <button onClick={() => fileInputRef.current?.click()} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-slate-300 hover:bg-slate-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50">
+                                <ImageIcon size={20} className="text-slate-500 mr-2" /> Archivo local
                               </button>
                               <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
                           </div>
@@ -662,9 +680,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
                           <div className="space-y-4 bg-white p-5 rounded-xl border border-slate-100 shadow-xl animate-in fade-in slide-in-from-top-4">
                             <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-blue-500 bg-slate-50 font-bold" placeholder="URL de la evidencia..." />
                             <div className="flex justify-end gap-3">
-                              <button onClick={() => setUploadType(null)} className="px-4 py-2 text-slate-500 text-[10px] font-black hover:bg-slate-100 rounded-lg transition-colors">Atrás</button>
-                              <button onClick={handleLinkSubmit} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95">
-                                <Send size={16} className="mr-2" /> Registrar
+                              <button onClick={() => setUploadType(null)} disabled={isSaving} className="px-4 py-2 text-slate-500 text-[10px] font-black hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Atrás</button>
+                              <button onClick={handleLinkSubmit} disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50">
+                                <Send size={16} className="mr-2" /> Registrar Carga
                               </button>
                             </div>
                           </div>

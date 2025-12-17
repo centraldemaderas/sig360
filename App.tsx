@@ -54,12 +54,12 @@ function App() {
         if (USE_CLOUD_DB) setIsCloudConnected(true);
       },
       (error) => {
+        console.error("Firestore Error (Activities):", error);
         setActivitiesLoaded(true); 
         if (USE_CLOUD_DB) setIsCloudConnected(false);
-        if (error?.code === 'permission-denied' || error?.code === 'not-found' || error?.code === 'failed-precondition') {
+        // Only set fatal dbError for specific critical failures, otherwise keep app running
+        if (error?.code === 'failed-precondition' || error?.code === 'not-found') {
            setDbError("No se pudo conectar a la base de datos.");
-        } else {
-           setDbError("Error de conexión: " + error.message);
         }
       }
     );
