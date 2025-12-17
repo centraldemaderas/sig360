@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Image as ImageIcon, Save, CheckCircle } from 'lucide-react';
+import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw } from 'lucide-react';
+import { dataService } from '../services/dataService';
+import { USE_CLOUD_DB } from '../firebaseConfig';
 
 interface SystemSettingsProps {
   currentLogo: string | null;
@@ -10,6 +12,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(currentLogo);
   const [message, setMessage] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -43,13 +46,86 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
     setTimeout(() => setMessage(null), 3000);
   };
 
+  const handleSeedData = async () => {
+    if (!confirm("Esto cargará los datos de prueba (Gerencia, Usuarios) en la base de datos de la nube. Si ya existen datos, se sobrescribirán los que tengan el mismo ID. ¿Continuar?")) return;
+    
+    setIsSyncing(true);
+    try {
+      await dataService.seedInitialData();
+      setMessage('✅ Datos sincronizados con la Nube exitosamente.');
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'permission-denied') {
+        setMessage('❌ Error: Permiso denegado. Revisa las "Reglas" en Firebase Console.');
+      } else {
+        setMessage('❌ Error al sincronizar: ' + error.message);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-8 pb-10">
       <div>
         <h2 className="text-2xl font-bold text-slate-800">Configuración del Sistema</h2>
-        <p className="text-slate-500">Personalización de la identidad visual de la plataforma.</p>
+        <p className="text-slate-500">Personalización e infraestructura de la plataforma.</p>
       </div>
 
+      {/* --- DATABASE SECTION --- */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+         <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+          <Database className="mr-2 text-slate-500" />
+          Estado de Base de Datos
+        </h3>
+
+        <div className={`p-4 rounded-lg border flex items-start mb-6 ${USE_CLOUD_DB ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+          {USE_CLOUD_DB ? (
+            <CloudLightning className="text-green-600 mr-3 mt-0.5" />
+          ) : (
+             <AlertTriangle className="text-amber-600 mr-3 mt-0.5" />
+          )}
+          <div>
+            <h4 className={`font-bold text-sm ${USE_CLOUD_DB ? 'text-green-800' : 'text-amber-800'}`}>
+              {USE_CLOUD_DB ? 'Conectado a Firebase Cloud' : 'Modo Local (Sin Nube)'}
+            </h4>
+            <p className={`text-sm mt-1 ${USE_CLOUD_DB ? 'text-green-700' : 'text-amber-700'}`}>
+              {USE_CLOUD_DB 
+                ? 'Los datos se guardan en tiempo real en los servidores de Google.' 
+                : 'Los datos solo viven en este navegador. Activa Firebase para persistencia.'}
+            </p>
+          </div>
+        </div>
+
+        {USE_CLOUD_DB && (
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+            <h4 className="font-bold text-slate-700 mb-2">Inicialización de Datos</h4>
+            <p className="text-sm text-slate-500 mb-4">
+              Si acabas de crear la base de datos en Firebase, estará vacía. Utiliza este botón para cargar los datos de demostración (Actividades de Gerencia, Usuarios base).
+            </p>
+            <button 
+              onClick={handleSeedData}
+              disabled={isSyncing}
+              className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                isSyncing 
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+              }`}
+            >
+              <RefreshCw size={18} className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Sincronizando...' : 'Cargar Datos Iniciales a la Nube'}
+            </button>
+            {message && message.includes('Sincronizados') && (
+              <p className="mt-3 text-sm text-green-600 font-medium">{message}</p>
+            )}
+            {message && message.includes('Error') && (
+              <p className="mt-3 text-sm text-red-600 font-medium">{message}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* --- LOGO SECTION --- */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
         <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
           <ImageIcon className="mr-2 text-slate-500" />
@@ -129,8 +205,8 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
               </div>
             </div>
 
-            {message && (
-              <div className={`mt-4 p-3 rounded-lg text-sm flex items-center ${message.includes('error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+            {message && !message.includes('Error') && !message.includes('Sincronizados') && (
+              <div className={`mt-4 p-3 rounded-lg text-sm flex items-center ${message.includes('restaurado') ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
                 <CheckCircle size={16} className="mr-2" />
                 {message}
               </div>

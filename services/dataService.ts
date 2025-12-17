@@ -21,9 +21,11 @@ class DataService {
           querySnapshot.forEach((doc) => {
             activities.push({ ...doc.data(), id: doc.id } as Activity);
           });
+          // Note: We removed the auto-seeding here to allow manual control via Settings
+          // unless it's completely empty, but we'll handle that via the UI button now for safety.
           if (activities.length === 0) {
-            // Optional: Seed initial data if DB is empty
-            this.seedInitialData();
+             console.log("DB is empty. Use Settings to seed data.");
+             onUpdate([]); // Return empty list initially
           } else {
             onUpdate(activities);
           }
@@ -56,8 +58,8 @@ class DataService {
             users.push({ ...doc.data(), id: doc.id } as User);
           });
           if (users.length === 0) {
-             // We don't auto-seed users for security, but could be done
-             onUpdate(MOCK_USERS); 
+             // We don't auto-seed users automatically to avoid overwrites, done via Settings
+             onUpdate([]); 
           } else {
              onUpdate(users);
           }
@@ -174,22 +176,28 @@ class DataService {
     window.dispatchEvent(new Event('local-data-changed'));
   }
 
-  // Seed data for Cloud (Run once)
-  private async seedInitialData() {
-    if (!USE_CLOUD_DB || !db) return;
-    console.log("Seeding initial data to Cloud...");
-    try {
-      for (const act of MOCK_ACTIVITIES_GERENCIA) {
-         const { id, ...data } = act;
-         await setDoc(doc(db, COLL_ACTIVITIES, id), data);
-      }
-      for (const user of MOCK_USERS) {
-         const { id, ...data } = user;
-         await setDoc(doc(db, COLL_USERS, id), data);
-      }
-    } catch (e) {
-      console.error("Error seeding data (likely permissions):", e);
+  // --- SEED DATA (Now Public) ---
+  public async seedInitialData() {
+    if (!USE_CLOUD_DB || !db) throw new Error("No hay conexión a la Nube");
+    
+    console.log("Iniciando carga de datos masiva a Firestore...");
+    
+    const batchPromises = [];
+
+    // Seed Activities
+    for (const act of MOCK_ACTIVITIES_GERENCIA) {
+       const { id, ...data } = act;
+       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), data));
     }
+
+    // Seed Users
+    for (const user of MOCK_USERS) {
+       const { id, ...data } = user;
+       batchPromises.push(setDoc(doc(db, COLL_USERS, id), data));
+    }
+
+    await Promise.all(batchPromises);
+    console.log("¡Carga completada!");
   }
 }
 

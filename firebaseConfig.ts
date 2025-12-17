@@ -1,7 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
-// --- CONFIGURACIÓN DE FIREBASE (Extraída de tu captura) ---
+// --- CONFIGURACIÓN DE FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyBesVOVBX1f_swH7ysIDfv4W8gLVkkqY88",
   authDomain: "sig-360.firebaseapp.com",
@@ -13,17 +15,22 @@ const firebaseConfig = {
 };
 
 // --- ACTIVACIÓN DE NUBE ---
-// Está activado (true). La app se conectará automáticamente.
+// CAMBIO IMPORTANTE: Se establece en TRUE para conectar a la base de datos real.
+// Ahora que index.html está limpio, esto funcionará correctamente en Netlify.
 export const USE_CLOUD_DB = true; 
 
 let app;
 let db: any;
+let auth: any;
+let storage: any;
 
 if (USE_CLOUD_DB) {
   try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
-    console.log("✅ Conectado a Firebase Cloud (Proyecto: sig-360)");
+    auth = getAuth(app);
+    storage = getStorage(app);
+    console.log("✅ Conectado a Firebase Cloud (DB + Storage)");
   } catch (error) {
     console.error("❌ Error conectando a Firebase.", error);
   }
@@ -31,4 +38,4 @@ if (USE_CLOUD_DB) {
   console.log("⚠️ Modo LocalStorage activo (Sin nube).");
 }
 
-export { db };
+export { db, auth, storage };
