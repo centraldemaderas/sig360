@@ -1,9 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
 
-// --- CONFIGURACIÓN DE FIREBASE ---
+// --- CONFIGURACIÓN DE FIREBASE (Extraída de tu captura) ---
 const firebaseConfig = {
   apiKey: "AIzaSyBesVOVBX1f_swH7ysIDfv4W8gLVkkqY88",
   authDomain: "sig-360.firebaseapp.com",
@@ -15,20 +13,17 @@ const firebaseConfig = {
 };
 
 // --- ACTIVACIÓN DE NUBE ---
+// Está activado (true). La app se conectará automáticamente.
 export const USE_CLOUD_DB = true; 
 
 let app;
 let db: any;
-let auth: any;
-let storage: any;
 
 if (USE_CLOUD_DB) {
   try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
-    auth = getAuth(app);
-    storage = getStorage(app);
-    console.log("✅ Conectado a Firebase Cloud (DB + Storage)");
+    console.log("✅ Conectado a Firebase Cloud (Proyecto: sig-360)");
   } catch (error) {
     console.error("❌ Error conectando a Firebase.", error);
   }
@@ -36,4 +31,4 @@ if (USE_CLOUD_DB) {
   console.log("⚠️ Modo LocalStorage activo (Sin nube).");
 }
 
-export { db, auth, storage };
+export { db };

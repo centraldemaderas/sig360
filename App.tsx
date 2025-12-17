@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { StandardView } from './components/StandardView';
@@ -9,7 +9,7 @@ import { SystemSettings } from './components/SystemSettings';
 import { StandardType, Activity, User } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
-import { Database, AlertTriangle, Loader2 } from 'lucide-react';
+import { Database, AlertTriangle, ExternalLink } from 'lucide-react';
 
 function App() {
   // Authentication State
@@ -37,11 +37,7 @@ function App() {
     const unsubscribeActivities = dataService.subscribeToActivities(
       (data) => {
         setActivities(data);
-        // Add a small artificial delay only on first load to show the nice animation
-        // and prevent flickering if data loads instantly from cache
-        setTimeout(() => {
-            setIsLoading(false);
-        }, 1500);
+        setIsLoading(false);
         setDbError(null); // Clear error if successful
         if (USE_CLOUD_DB) setIsCloudConnected(true);
       },
@@ -135,40 +131,7 @@ function App() {
 
   // --- LOADING SCREEN ---
   if (isLoading) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-slate-50 overflow-hidden relative">
-         <div className="absolute top-0 left-0 w-full h-full bg-grid-slate-200 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] bg-[length:20px_20px]"></div>
-         
-         <div className="relative z-10 flex flex-col items-center">
-            {/* Logo Animation */}
-            <div className="mb-8 relative">
-              <div className="absolute inset-0 bg-red-100 rounded-full animate-ping opacity-20"></div>
-              <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 relative z-10">
-                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-16 object-contain" />
-                 ) : (
-                    <svg viewBox="0 0 120 120" className="h-20 w-20">
-                      <g strokeLinecap="round" strokeLinejoin="round" fill="none">
-                        <path d="M 20 80 L 60 40 L 100 80" stroke="#B91C1C" strokeWidth="10" />
-                        <path d="M 40 80 L 60 60 L 80 80" stroke="#1F2937" strokeWidth="10" />
-                        <rect x="53" y="70" width="14" height="14" transform="rotate(45 60 77)" fill="#1F2937" stroke="none" />
-                      </g>
-                    </svg>
-                 )}
-              </div>
-            </div>
-
-            <div className="text-center space-y-4">
-              <h2 className="text-2xl font-bold text-slate-800 tracking-tight">SIG-Manager Pro</h2>
-              <div className="flex items-center justify-center space-x-2 text-slate-500 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-200">
-                <Loader2 size={16} className="animate-spin text-blue-600" />
-                <span className="text-sm font-medium">Sincronizando con Firebase Cloud...</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-2">Central de Maderas G&S SAS</p>
-            </div>
-         </div>
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium">Cargando sistema...</div>;
   }
 
   // --- DB SETUP GUIDE SCREEN (If DB is missing) ---

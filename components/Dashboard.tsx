@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  LineChart as LineChartRecharts, Line, ComposedChart, Area, Cell
+  LineChart, Line, ComposedChart, Area, Cell
 } from 'recharts';
 import { TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, ClipboardList } from 'lucide-react';
 import { MOCK_AREA_STATS } from '../constants';

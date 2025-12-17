@@ -40,8 +40,7 @@ export interface Activity {
   compliance2024: boolean; // Historic data
   compliance2025: boolean; // Target
   monthlyPlan: MonthlyExecution[];
-  evidenceFile?: string; // Nombre del archivo para mostrar
-  evidenceUrl?: string; // URL real de descarga (Firebase Storage)
+  evidenceFile?: string; // Mock file name
 }
 
 export interface AreaStats {

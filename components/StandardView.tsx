@@ -1,8 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
 import { Activity, StandardType, Periodicity } from '../types';
-import { Check, Upload, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Download, Loader2 } from 'lucide-react';
-import { dataService } from '../services/dataService';
+import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download } from 'lucide-react';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -25,10 +24,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
   // Upload Modal State
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  
-  // Hidden File Input
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter activities based on the selected area AND the current standard
   const filteredActivities = activities.filter(a => {
@@ -40,54 +35,30 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const openUploadModal = (activityId: string) => {
     setActiveUploadId(activityId);
     setUploadModalOpen(true);
-    setIsUploading(false);
   };
 
-  const handleLocalUploadClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeUploadId) return;
+  const performUpload = (source: 'local' | 'onedrive') => {
+    if (!activeUploadId) return;
 
     const activityToUpdate = activities.find(a => a.id === activeUploadId);
     if (!activityToUpdate) return;
 
-    setIsUploading(true);
-    try {
-      // 1. Upload to Storage
-      const downloadUrl = await dataService.uploadEvidence(file, activeUploadId, currentYear);
-      
-      // 2. Update Activity Record
-      const updatedActivity: Activity = {
+    // Simulation logic
+    setTimeout(() => {
+      const updatedActivity = {
         ...activityToUpdate,
-        evidenceFile: file.name, // Display name
-        evidenceUrl: downloadUrl // Real URL form Firebase Storage
+        evidenceFile: source === 'onedrive' ? 'Documento_Sharepoint_v1.docx' : 'Escaneo_Local_001.pdf'
       };
-      
-      await onUpdateActivity(updatedActivity);
-      
+      onUpdateActivity(updatedActivity);
       setUploadModalOpen(false);
       setActiveUploadId(null);
-    } catch (error) {
-      alert("Error al subir el archivo: " + error);
-    } finally {
-      setIsUploading(false);
-      // Reset input
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    }, 500);
   };
 
   const handleDownloadEvidence = (activity: Activity) => {
-    if (activity.evidenceUrl) {
-      // Open the real Firebase Storage URL
-      window.open(activity.evidenceUrl, '_blank');
-    } else if (activity.evidenceFile) {
-      // Fallback for legacy/mock data
-      alert(`Archivo simulado (Sin URL real): ${activity.evidenceFile}`);
+    if (activity.evidenceFile) {
+      // Simulate download
+      alert(`Descargando evidencia: ${activity.evidenceFile}`);
     } else {
       openUploadModal(activity.id);
     }
@@ -99,6 +70,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const cells = [];
     let i = 0;
 
+    // Logic: If currentYear > 2025, we assume it's a future "Planned" year.
+    // So we ignore 'executed' and 'delayed' status from the mock data (which is 2025 data).
     const isFutureYear = currentYear > 2025;
 
     const getCellContent = (startIndex: number, endIndex: number) => {
@@ -110,7 +83,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
         if (!isFutureYear && plan[k]?.executed) hasExecuted = true;
         if (!isFutureYear && plan[k]?.delayed) hasDelayed = true;
         
+        // Planning logic
         if (isFutureYear) {
+           // For 2026+, we strictly look at the periodicity to determine the plan
            const monthIndex = k;
            let isPlannedMonth = false;
            switch (activity.periodicity) {
@@ -184,6 +159,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.MONTHLY: default: colSpan = 1; break;
       }
 
+      // Ensure we don't go out of bounds (though mock data is usually 12)
       if (i + colSpan > 12) colSpan = 12 - i;
 
       cells.push(
@@ -204,7 +180,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
     return cells;
   };
 
+  // Determine Historical Compliance based on View Year
   const getHistoricalCompliance = (activity: Activity) => {
+    // If viewing 2025, history is 2024. If viewing 2026, history is 2025.
     if (currentYear === 2025) return activity.compliance2024;
     if (currentYear === 2026) return activity.compliance2025;
     return false;
@@ -215,6 +193,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       {/* Filters Toolbar */}
       <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center space-x-4">
+          {/* Year Selector */}
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
              <button 
                onClick={() => setCurrentYear(2025)}
@@ -267,7 +246,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
               <th className="p-3 border-r border-slate-200 min-w-[200px] bg-slate-50 border-b-2 border-slate-300">Tarea Específica / Criterio</th>
               <th className="p-3 border-r border-slate-200 w-[60px] text-center">Detalle</th>
               <th className="p-3 border-r border-slate-200 min-w-[60px] text-center bg-slate-200">
-                 {currentYear - 1}
+                 {currentYear - 1} {/* Dynamic History Year */}
               </th>
               {MONTHS.map(m => (
                 <th key={m} className="p-2 border-r border-slate-200 text-center min-w-[40px]">{m}</th>
@@ -337,7 +316,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                           className="flex items-center text-blue-600 hover:underline mb-1 hover:bg-blue-50 p-1 rounded"
                         >
                           <Download size={14} className="mr-1" />
-                          <span className="truncate max-w-[60px] text-[10px]">Ver</span>
+                          <span className="truncate max-w-[60px] text-[10px]">Bajar</span>
                         </button>
                       </div>
                     ) : (
@@ -378,7 +357,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </div>
       </div>
 
-      {/* DETAIL MODAL (Unchanged Logic, just rendering) */}
+      {/* DETAIL MODAL */}
       {viewingActivity && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -445,62 +424,44 @@ export const StandardView: React.FC<StandardViewProps> = ({
             
             <div className="p-6">
               <p className="text-sm text-slate-600 mb-6 text-center">
-                Seleccione el archivo para justificar el cumplimiento de este requisito.
+                Seleccione el origen del archivo para la actividad seleccionada.
               </p>
-
-              {/* Hidden File Input */}
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
-              />
               
               <div className="space-y-3">
-                {isUploading ? (
-                  <div className="p-8 flex flex-col items-center justify-center border border-slate-200 rounded-xl bg-slate-50">
-                    <Loader2 size={32} className="animate-spin text-blue-600 mb-3" />
-                    <span className="text-sm font-bold text-slate-700">Subiendo a la nube...</span>
+                <button 
+                  onClick={() => performUpload('onedrive')}
+                  className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group"
+                >
+                  <div className="flex items-center">
+                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-lg mr-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <Cloud size={24} />
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold text-slate-800 group-hover:text-blue-700">OneDrive / SharePoint</span>
+                      <span className="text-xs text-slate-500">Vincular archivo de la nube</span>
+                    </div>
                   </div>
-                ) : (
-                  <>
-                    <button 
-                      className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group opacity-50 cursor-not-allowed"
-                      title="Proximamente: Integración directa con SharePoint"
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-blue-100 text-blue-600 p-2.5 rounded-lg mr-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <Cloud size={24} />
-                        </div>
-                        <div className="text-left">
-                          <span className="block font-bold text-slate-800">OneDrive / SharePoint</span>
-                          <span className="text-xs text-slate-500">Próximamente</span>
-                        </div>
-                      </div>
-                    </button>
+                </button>
 
-                    <button 
-                      onClick={handleLocalUploadClick}
-                      className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group shadow-sm hover:shadow-md"
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-slate-800 text-white p-2.5 rounded-lg mr-4 group-hover:bg-slate-700 transition-colors">
-                          <HardDrive size={24} />
-                        </div>
-                        <div className="text-left">
-                          <span className="block font-bold text-slate-800">Subir Archivo Local</span>
-                          <span className="text-xs text-slate-500">PDF, Excel, Imagen (Max 10MB)</span>
-                        </div>
-                      </div>
-                    </button>
-                  </>
-                )}
+                <button 
+                  onClick={() => performUpload('local')}
+                  className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                >
+                  <div className="flex items-center">
+                    <div className="bg-slate-100 text-slate-600 p-2.5 rounded-lg mr-4 group-hover:bg-slate-800 group-hover:text-white transition-colors">
+                      <HardDrive size={24} />
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold text-slate-800">Dispositivo Local</span>
+                      <span className="text-xs text-slate-500">Subir PDF, Imagen o Excel</span>
+                    </div>
+                  </div>
+                </button>
               </div>
             </div>
             
             <div className="bg-slate-50 p-3 text-center text-xs text-slate-400 border-t border-slate-100">
-              Almacenamiento seguro en Google Cloud Storage
+              Formatos soportados: PDF, DOCX, XLSX, JPG
             </div>
           </div>
         </div>
