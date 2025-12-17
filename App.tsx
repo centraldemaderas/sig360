@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { StandardView } from './components/StandardView';
@@ -9,7 +9,7 @@ import { SystemSettings } from './components/SystemSettings';
 import { StandardType, Activity, User } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
-import { Database, AlertTriangle, CloudLightning, Loader2 } from 'lucide-react';
+import { Database, AlertTriangle, Loader2 } from 'lucide-react';
 
 function App() {
   // Authentication State

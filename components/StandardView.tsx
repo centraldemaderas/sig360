@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { MONTHS, AREAS } from '../constants';
 import { Activity, StandardType, Periodicity } from '../types';
-import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Loader2 } from 'lucide-react';
+import { Check, Upload, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Download, Loader2 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 
 interface StandardViewProps {
