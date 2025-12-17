@@ -21,11 +21,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Sanitize Data before saving
+    const sanitizedData = {
+      ...formData,
+      email: formData.email.trim().toLowerCase(),
+      password: formData.password.trim()
+    };
+    
     if (editingId) {
       // Update existing user
       onUpdateUser({
         id: editingId,
-        ...formData
+        ...sanitizedData
       });
       // Reset logic
       setEditingId(null);
@@ -33,7 +40,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
       // Create new user
       onAddUser({
         id: `u-${Date.now()}`,
-        ...formData
+        ...sanitizedData
       });
     }
     

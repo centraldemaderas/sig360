@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw, Fingerprint } from 'lucide-react';
+import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw, Fingerprint, Search, ShieldCheck } from 'lucide-react';
 import { dataService } from '../services/dataService';
-import { USE_CLOUD_DB, firebaseConfig } from '../firebaseConfig';
+import { USE_CLOUD_DB, firebaseConfig, DATABASE_ID } from '../firebaseConfig';
+import { collection, getCountFromServer } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
 
 interface SystemSettingsProps {
   currentLogo: string | null;
@@ -13,6 +15,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
   const [preview, setPreview] = useState<string | null>(currentLogo);
   const [message, setMessage] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dbStats, setDbStats] = useState<{activities: number, users: number} | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,15 +49,39 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
     setTimeout(() => setMessage(null), 3000);
   };
 
+  const handleVerifyData = async () => {
+    if (!USE_CLOUD_DB || !db) return;
+    setIsSyncing(true);
+    try {
+      const collActivities = collection(db, 'activities');
+      const collUsers = collection(db, 'users');
+      
+      const snapshotAct = await getCountFromServer(collActivities);
+      const snapshotUsers = await getCountFromServer(collUsers);
+      
+      setDbStats({
+        activities: snapshotAct.data().count,
+        users: snapshotUsers.data().count
+      });
+      setMessage('Diagnóstico completado.');
+    } catch (error: any) {
+      console.error(error);
+      setMessage(`Error leyendo datos: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSeedData = async () => {
-    if (!confirm(`Se enviarán datos al proyecto "${firebaseConfig.projectId}". ¿Continuar?`)) return;
+    if (!confirm(`Se enviarán datos al proyecto "${firebaseConfig.projectId}" (DB: ${DATABASE_ID}). ¿Continuar?`)) return;
     
     setIsSyncing(true);
     setMessage(null); // Clear previous messages
     try {
       await dataService.seedInitialData();
       setMessage('✅ ¡Éxito! Datos sincronizados con Firebase Cloud.');
-      alert(`Sincronización completada en proyecto: ${firebaseConfig.projectId}.\n\nSi no ves los datos, verifica que estés mirando el proyecto correcto en la consola de Firebase.`);
+      handleVerifyData(); // Auto verify after seed
+      alert(`Sincronización completada en proyecto: ${firebaseConfig.projectId}.\n\nIMPORTANTE: Si no ves los datos en la consola de Firebase, asegúrate de seleccionar la base de datos "${DATABASE_ID}" en el menú desplegable.`);
     } catch (error: any) {
       console.error("Error detallado:", error);
       let errorMsg = 'Error desconocido.';
@@ -106,32 +133,85 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
             
             {/* Project ID Debugger */}
             {USE_CLOUD_DB && (
-              <div className="mt-3 flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
-                <Fingerprint size={14} className="mr-2 opacity-50" />
-                ID del Proyecto: <strong>{firebaseConfig.projectId}</strong>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
+                  <Fingerprint size={14} className="mr-2 opacity-50" />
+                  Proyecto: <strong>{firebaseConfig.projectId}</strong>
+                </div>
+                <div className="flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
+                  <Database size={14} className="mr-2 opacity-50" />
+                  Base de Datos: <strong>{DATABASE_ID}</strong>
+                </div>
               </div>
             )}
           </div>
         </div>
 
         {USE_CLOUD_DB && (
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-            <h4 className="font-bold text-slate-700 mb-2">Inicialización de Datos</h4>
-            <p className="text-sm text-slate-500 mb-4">
-              Si acabas de crear la base de datos en Firebase, estará vacía. Utiliza este botón para cargar los datos de demostración (Actividades de Gerencia, Usuarios base).
-            </p>
-            <button 
-              onClick={handleSeedData}
-              disabled={isSyncing}
-              className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                isSyncing 
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
-              }`}
-            >
-              <RefreshCw size={18} className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Sincronizando...' : `Cargar Datos a ${firebaseConfig.projectId}`}
-            </button>
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
+            <div>
+              <h4 className="font-bold text-slate-700 mb-2">Gestión de Datos</h4>
+              <p className="text-sm text-slate-500 mb-4">
+                Herramientas para inicializar o verificar la conexión con la nube.
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap gap-3">
+              <button 
+                onClick={handleSeedData}
+                disabled={isSyncing}
+                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isSyncing 
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+                }`}
+              >
+                <RefreshCw size={18} className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Procesando...' : `Cargar Datos Iniciales`}
+              </button>
+              
+              <button 
+                onClick={handleVerifyData}
+                disabled={isSyncing}
+                className="flex items-center px-4 py-2 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Search size={18} className="mr-2" />
+                Verificar Integridad
+              </button>
+            </div>
+
+            {/* Verification Stats Result */}
+            {dbStats && (
+              <div className="mt-4 bg-white border border-slate-200 rounded-lg p-4 animate-in fade-in slide-in-from-top-2">
+                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Resultados del Diagnóstico</h5>
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="flex items-center">
+                      <div className="p-2 bg-blue-100 text-blue-600 rounded-lg mr-3">
+                        <ShieldCheck size={20} />
+                      </div>
+                      <div>
+                        <span className="block text-2xl font-bold text-slate-800">{dbStats.activities}</span>
+                        <span className="text-xs text-slate-500">Actividades/Requisitos</span>
+                      </div>
+                   </div>
+                   <div className="flex items-center">
+                      <div className="p-2 bg-purple-100 text-purple-600 rounded-lg mr-3">
+                        <Fingerprint size={20} />
+                      </div>
+                      <div>
+                        <span className="block text-2xl font-bold text-slate-800">{dbStats.users}</span>
+                        <span className="text-xs text-slate-500">Usuarios Registrados</span>
+                      </div>
+                   </div>
+                </div>
+                {dbStats.activities > 0 ? (
+                  <p className="mt-3 text-xs text-green-600 font-bold">✅ Conexión exitosa. La base de datos contiene información.</p>
+                ) : (
+                  <p className="mt-3 text-xs text-amber-600 font-bold">⚠️ Conexión exitosa pero la base de datos está vacía.</p>
+                )}
+              </div>
+            )}
+
             {message && message.includes('Éxito') && (
               <p className="mt-3 text-sm text-green-600 font-bold bg-green-50 p-2 rounded border border-green-100">{message}</p>
             )}
@@ -222,7 +302,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
               </div>
             </div>
 
-            {message && !message.includes('Error') && !message.includes('❌') && !message.includes('Éxito') && (
+            {message && !message.includes('Error') && !message.includes('❌') && !message.includes('Éxito') && !message.includes('Diagnóstico') && (
               <div className={`mt-4 p-3 rounded-lg text-sm flex items-center ${message.includes('restaurado') ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
                 <CheckCircle size={16} className="mr-2" />
                 {message}

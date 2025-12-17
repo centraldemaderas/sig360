@@ -24,33 +24,43 @@ function App() {
   // Data State
   const [activities, setActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  
+  // Loading States - Split to ensure both data sources arrive
+  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  
   const [dbError, setDbError] = useState<string | null>(null);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   
   // Year State
   const [currentYear, setCurrentYear] = useState<number>(2025);
 
+  // Combine loading states
+  useEffect(() => {
+    if (activitiesLoaded && usersLoaded) {
+      setIsLoading(false);
+    }
+  }, [activitiesLoaded, usersLoaded]);
+
   // --- DATA SUBSCRIPTIONS ---
   useEffect(() => {
-    // 1. Timeout de Seguridad: Si Firebase tarda más de 3 segundos, quitamos la pantalla de carga
-    // para que el usuario pueda interactuar (aunque los datos aparezcan un segundo después).
+    // 1. Timeout de Seguridad: Si Firebase tarda más de 5 segundos, quitamos la carga forzosamente
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
-    }, 3000);
+    }, 5000);
 
-    // Subscribe to Activities with Error Handling
+    // Subscribe to Activities
     const unsubscribeActivities = dataService.subscribeToActivities(
       (data) => {
         setActivities(data);
-        setIsLoading(false); // Datos llegaron, quitamos carga
-        setDbError(null); // Clear error if successful
+        setActivitiesLoaded(true);
+        setDbError(null); 
         if (USE_CLOUD_DB) setIsCloudConnected(true);
       },
       (error) => {
-        setIsLoading(false);
+        setActivitiesLoaded(true); // Mark as handled even if error
         if (USE_CLOUD_DB) setIsCloudConnected(false);
-        // Detect common Firestore errors
         if (error?.code === 'permission-denied' || error?.code === 'not-found' || error?.code === 'failed-precondition') {
            setDbError("No se pudo conectar a la base de datos.");
         } else {
@@ -60,9 +70,16 @@ function App() {
     );
 
     // Subscribe to Users
-    const unsubscribeUsers = dataService.subscribeToUsers((data) => {
-      setUsers(data);
-    });
+    const unsubscribeUsers = dataService.subscribeToUsers(
+      (data) => {
+        setUsers(data);
+        setUsersLoaded(true); // Critical: Confirm users are here
+      },
+      (error) => {
+        console.error("Error loading users", error);
+        setUsersLoaded(true); // Mark as handled to unblock app
+      }
+    );
 
     // Helper for LocalStorage events (hybrid support)
     const handleLocalChange = () => {
@@ -141,7 +158,8 @@ function App() {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium space-y-4">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div>
-        <p>Iniciando Sistema...</p>
+        <p>Conectando con {USE_CLOUD_DB ? 'Firebase Cloud' : 'Datos Locales'}...</p>
+        <p className="text-xs text-slate-400">Sincronizando Usuarios y Actividades</p>
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
@@ -15,6 +15,11 @@ export const firebaseConfig = {
   measurementId: "G-P2QLX4QXKQ"
 };
 
+// --- NOMBRE DE LA BASE DE DATOS ---
+// Déjalo vacío o '(default)' para la base principal.
+// Si quieres usar tu base 'sig360', cambia esto a: "sig360"
+export const DATABASE_ID = "(default)"; 
+
 // --- ACTIVACIÓN DE NUBE ---
 export const USE_CLOUD_DB = true; 
 
@@ -26,10 +31,19 @@ let storage: any;
 if (USE_CLOUD_DB) {
   try {
     app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
+    
+    // Inicializamos Firestore apuntando explícitamente a la base de datos configurada
+    if (DATABASE_ID && DATABASE_ID !== '(default)') {
+       db = initializeFirestore(app, {
+         style: 'http', // necesario para bases de datos nombradas en algunas versiones
+       }, DATABASE_ID);
+    } else {
+       db = getFirestore(app);
+    }
+
     auth = getAuth(app);
     storage = getStorage(app);
-    console.log(`✅ Conectado a Firebase Cloud: ${firebaseConfig.projectId}`);
+    console.log(`✅ Conectado a Firebase Cloud: ${firebaseConfig.projectId} [DB: ${DATABASE_ID}]`);
   } catch (error) {
     console.error("❌ Error conectando a Firebase.", error);
   }
