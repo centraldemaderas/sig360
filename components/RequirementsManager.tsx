@@ -149,7 +149,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
       compliance2024: formData.compliance2024 || false,
       compliance2025: formData.compliance2025 || false,
       monthlyPlan: finalPlan,
-      evidenceFile: formData.evidenceFile
+      evidence: formData.evidence
     };
 
     if (editingActivity) {

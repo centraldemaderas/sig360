@@ -1,3 +1,4 @@
+
 export enum StandardType {
   ISO9001 = 'ISO 9001:2015 (Calidad)',
   SGSST = 'SG-SST (Seguridad y Salud)',
@@ -26,21 +27,47 @@ export interface MonthlyExecution {
   delayed: boolean;
 }
 
+export interface Evidence {
+  url: string; // Base64 string or HTTP Link
+  type: 'FILE' | 'LINK';
+  fileName: string;
+  uploadedBy: string; // User Name
+  uploadedAt: string; // ISO Date String
+}
+
 export interface Activity {
   id: string;
-  clause: string; // e.g., "4.1"
-  subClause: string; // e.g., "4.1.1" or "1" - The specific task identifier
-  clauseTitle: string; // e.g., "Comprensión de la organización"
-  description: string; // The standard requirement description
-  contextualization: string; // "Explicación dentro de Central de Maderas"
+  clause: string; 
+  subClause: string; 
+  clauseTitle: string; 
+  description: string; 
+  contextualization: string; 
   relatedQuestions: string;
-  standards: StandardType[]; // Can belong to multiple standards
+  standards: StandardType[]; 
   responsibleArea: string;
-  periodicity: Periodicity; // Added field
-  compliance2024: boolean; // Historic data
-  compliance2025: boolean; // Target
+  periodicity: Periodicity; 
+  compliance2024: boolean; 
+  compliance2025: boolean; 
   monthlyPlan: MonthlyExecution[];
-  evidenceFile?: string; // Mock file name
+  evidence?: Evidence; // Updated from string to Object
+}
+
+export interface StandardDefinition {
+  id: string;
+  type: StandardType;
+  description: string;
+  objective: string;
+  certifyingBody: string; // Ente certificador
+  comments: {
+    id: string;
+    text: string;
+    author: string;
+    date: string;
+  }[];
+}
+
+export interface AppSettings {
+  companyLogo: string | null; // Base64
 }
 
 export interface AreaStats {
@@ -49,13 +76,13 @@ export interface AreaStats {
   totalActivities: number;
   completedActivities: number;
   compliancePercentage: number;
-  previousCompliance: number; // For deterioration analysis
+  previousCompliance: number; 
 }
 
 export interface GlobalStats {
   overallCompliance: number;
   targetCompliance: number;
-  deterioration: number; // Negative value implies deterioration
+  deterioration: number; 
 }
 
 export enum UserRole {
@@ -68,5 +95,5 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  password?: string; // In a real app, never store plain text
+  password?: string; 
 }

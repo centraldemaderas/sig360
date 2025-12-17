@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
-import { Activity, StandardType, Periodicity } from '../types';
-import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download } from 'lucide-react';
+import { Activity, StandardType, Periodicity, User } from '../types';
+import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -9,6 +10,7 @@ interface StandardViewProps {
   onUpdateActivity: (activity: Activity) => void;
   currentYear: number;
   setCurrentYear: (year: number) => void;
+  currentUser: User;
 }
 
 export const StandardView: React.FC<StandardViewProps> = ({ 
@@ -16,7 +18,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
   activities, 
   onUpdateActivity,
   currentYear,
-  setCurrentYear
+  setCurrentYear,
+  currentUser
 }) => {
   const [selectedArea, setSelectedArea] = useState('ALL');
   const [viewingActivity, setViewingActivity] = useState<Activity | null>(null);
@@ -24,6 +27,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
   // Upload Modal State
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+  const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
+  const [linkInput, setLinkInput] = useState('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Filter activities based on the selected area AND the current standard
   const filteredActivities = activities.filter(a => {
@@ -35,30 +41,72 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const openUploadModal = (activityId: string) => {
     setActiveUploadId(activityId);
     setUploadModalOpen(true);
+    setUploadType(null);
+    setLinkInput('');
   };
 
-  const performUpload = (source: 'local' | 'onedrive') => {
-    if (!activeUploadId) return;
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeUploadId) return;
 
-    const activityToUpdate = activities.find(a => a.id === activeUploadId);
-    if (!activityToUpdate) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const activityToUpdate = activities.find(a => a.id === activeUploadId);
+      if (!activityToUpdate) return;
 
-    // Simulation logic
-    setTimeout(() => {
-      const updatedActivity = {
+      const updatedActivity: Activity = {
         ...activityToUpdate,
-        evidenceFile: source === 'onedrive' ? 'Documento_Sharepoint_v1.docx' : 'Escaneo_Local_001.pdf'
+        evidence: {
+          url: base64,
+          type: 'FILE',
+          fileName: file.name,
+          uploadedBy: currentUser.name,
+          uploadedAt: new Date().toLocaleDateString()
+        }
       };
+
       onUpdateActivity(updatedActivity);
       setUploadModalOpen(false);
       setActiveUploadId(null);
-    }, 500);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLinkSubmit = () => {
+    if (!linkInput.trim() || !activeUploadId) return;
+    
+    const activityToUpdate = activities.find(a => a.id === activeUploadId);
+    if (!activityToUpdate) return;
+
+    const updatedActivity: Activity = {
+      ...activityToUpdate,
+      evidence: {
+        url: linkInput,
+        type: 'LINK',
+        fileName: 'Enlace Externo',
+        uploadedBy: currentUser.name,
+        uploadedAt: new Date().toLocaleDateString()
+      }
+    };
+    onUpdateActivity(updatedActivity);
+    setUploadModalOpen(false);
+    setActiveUploadId(null);
   };
 
   const handleDownloadEvidence = (activity: Activity) => {
-    if (activity.evidenceFile) {
-      // Simulate download
-      alert(`Descargando evidencia: ${activity.evidenceFile}`);
+    if (activity.evidence) {
+      if (activity.evidence.type === 'LINK') {
+        window.open(activity.evidence.url, '_blank');
+      } else {
+        // Create a temporary link for Base64 download
+        const link = document.createElement("a");
+        link.href = activity.evidence.url;
+        link.download = activity.evidence.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } else {
       openUploadModal(activity.id);
     }
@@ -70,87 +118,58 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const cells = [];
     let i = 0;
 
-    // Logic: If currentYear > 2025, we assume it's a future "Planned" year.
-    // So we ignore 'executed' and 'delayed' status from the mock data (which is 2025 data).
     const isFutureYear = currentYear > 2025;
+    const hasEvidence = !!activity.evidence;
 
     const getCellContent = (startIndex: number, endIndex: number) => {
-      let hasExecuted = false;
-      let hasDelayed = false;
-      let hasPlanned = false;
-
-      for (let k = startIndex; k <= endIndex; k++) {
-        if (!isFutureYear && plan[k]?.executed) hasExecuted = true;
-        if (!isFutureYear && plan[k]?.delayed) hasDelayed = true;
-        
-        // Planning logic
-        if (isFutureYear) {
-           // For 2026+, we strictly look at the periodicity to determine the plan
-           const monthIndex = k;
-           let isPlannedMonth = false;
-           switch (activity.periodicity) {
-             case Periodicity.MONTHLY: isPlannedMonth = true; break;
-             case Periodicity.BIMONTHLY: isPlannedMonth = monthIndex % 2 === 0; break;
-             case Periodicity.QUARTERLY: isPlannedMonth = (monthIndex + 1) % 3 === 0; break;
-             case Periodicity.SEMIANNUAL: isPlannedMonth = monthIndex === 5 || monthIndex === 11; break;
-             case Periodicity.ANNUAL: isPlannedMonth = monthIndex === 11; break;
-           }
-           if (isPlannedMonth) hasPlanned = true;
-        } else {
-           if (plan[k]?.planned) hasPlanned = true;
-        }
-      }
-
-      if (hasExecuted) {
-        return (
-          <button 
-            onClick={(e) => { e.stopPropagation(); handleDownloadEvidence(activity); }}
-            className="flex items-center justify-center w-full h-full hover:scale-110 transition-transform"
-            title={`Descargar evidencia: ${activity.evidenceFile || 'Sin archivo'}`}
-          >
-             <Check size={14} className="mx-auto text-white" />
-          </button>
+      // If there is global evidence attached to the activity, show Check everywhere for simplicity 
+      // OR implement logic to check if that specific month was executed.
+      // For this requirement, if evidence exists, we assume the task is done.
+      if (hasEvidence) {
+         return (
+          <div className="group relative w-full h-full flex items-center justify-center">
+             <button 
+              onClick={(e) => { e.stopPropagation(); handleDownloadEvidence(activity); }}
+              className="flex items-center justify-center w-full h-full hover:scale-110 transition-transform"
+            >
+               <Check size={14} className="mx-auto text-white" />
+            </button>
+            
+            {/* Tooltip on hover */}
+            <div className="absolute bottom-full mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg z-20 w-32 whitespace-normal leading-tight">
+               <strong>Subido por:</strong><br/>{activity.evidence?.uploadedBy}<br/>
+               <span className="opacity-75">{activity.evidence?.uploadedAt}</span>
+            </div>
+          </div>
         );
       }
-      if (hasDelayed) return <AlertCircle size={14} className="mx-auto text-white" />;
+
+      // Check planning
+      let hasPlanned = false;
+      for (let k = startIndex; k <= endIndex; k++) {
+        if (plan[k]?.planned) hasPlanned = true;
+      }
+      
       if (hasPlanned) return <span className="text-[10px] font-bold">P</span>;
       return null;
     };
 
     const getCellClass = (startIndex: number, endIndex: number) => {
-      let hasExecuted = false;
-      let hasDelayed = false;
-      let hasPlanned = false;
+      // Logic simplified: If evidence exists, it's green/blue. If not and planned, it's pending.
+      if (hasEvidence) return "bg-blue-600 text-white cursor-pointer hover:bg-blue-700";
 
+      let hasPlanned = false;
       for (let k = startIndex; k <= endIndex; k++) {
-        if (!isFutureYear && plan[k]?.executed) hasExecuted = true;
-        if (!isFutureYear && plan[k]?.delayed) hasDelayed = true;
-        
-        if (isFutureYear) {
-           const monthIndex = k;
-           let isPlannedMonth = false;
-           switch (activity.periodicity) {
-             case Periodicity.MONTHLY: isPlannedMonth = true; break;
-             case Periodicity.BIMONTHLY: isPlannedMonth = monthIndex % 2 === 0; break;
-             case Periodicity.QUARTERLY: isPlannedMonth = (monthIndex + 1) % 3 === 0; break;
-             case Periodicity.SEMIANNUAL: isPlannedMonth = monthIndex === 5 || monthIndex === 11; break;
-             case Periodicity.ANNUAL: isPlannedMonth = monthIndex === 11; break;
-           }
-           if (isPlannedMonth) hasPlanned = true;
-        } else {
-           if (plan[k]?.planned) hasPlanned = true;
-        }
+        if (plan[k]?.planned) hasPlanned = true;
       }
 
-      if (hasExecuted) return "bg-blue-600 text-white cursor-pointer hover:bg-blue-700";
-      if (hasDelayed) return "bg-red-500 text-white animate-pulse";
       if (hasPlanned) return "bg-blue-100 text-blue-800 border-2 border-blue-200";
       return "bg-slate-50 opacity-50"; 
     };
 
     while (i < 12) {
       let colSpan = 1;
-      
+      // ... same logic for colspan
       switch (activity.periodicity) {
         case Periodicity.ANNUAL: colSpan = 12; break;
         case Periodicity.SEMIANNUAL: colSpan = 6; break;
@@ -158,8 +177,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.BIMONTHLY: colSpan = 2; break;
         case Periodicity.MONTHLY: default: colSpan = 1; break;
       }
-
-      // Ensure we don't go out of bounds (though mock data is usually 12)
       if (i + colSpan > 12) colSpan = 12 - i;
 
       cells.push(
@@ -167,23 +184,21 @@ export const StandardView: React.FC<StandardViewProps> = ({
           key={i} 
           colSpan={colSpan} 
           className={`border-r border-slate-200 p-1 text-center transition-colors ${getCellClass(i, i + colSpan - 1)}`}
-          title={`Estado: ${activity.periodicity}`}
         >
           <div className="flex items-center justify-center h-full w-full">
             {getCellContent(i, i + colSpan - 1)}
           </div>
         </td>
       );
-
       i += colSpan;
     }
     return cells;
   };
 
-  // Determine Historical Compliance based on View Year
   const getHistoricalCompliance = (activity: Activity) => {
-    // If viewing 2025, history is 2024. If viewing 2026, history is 2025.
-    if (currentYear === 2025) return activity.compliance2024;
+    // Si la columna es 2025 (currentYear), queremos ver el histórico (2024).
+    if (currentYear === 2025) return activity.compliance2024; 
+    // Si estamos en 2026, el historico es 2025.
     if (currentYear === 2026) return activity.compliance2025;
     return false;
   };
@@ -193,7 +208,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
       {/* Filters Toolbar */}
       <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center space-x-4">
-          {/* Year Selector */}
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
              <button 
                onClick={() => setCurrentYear(2025)}
@@ -208,9 +222,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                2026
              </button>
           </div>
-
           <div className="h-6 w-px bg-slate-300"></div>
-
           <div className="bg-white p-2 border border-slate-300 rounded-lg flex items-center space-x-2 shadow-sm">
             <Filter size={18} className="text-slate-500" />
             <select 
@@ -224,15 +236,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
               ))}
             </select>
           </div>
-          <span className="text-sm text-slate-500 ml-2">
-            <strong>{filteredActivities.length}</strong> actividades | Año: <strong className="text-blue-700">{currentYear}</strong>
-          </span>
-        </div>
-
-        <div className="flex items-center space-x-4 text-xs font-medium text-slate-600">
-          <div className="flex items-center"><span className="w-3 h-3 bg-green-100 border border-green-500 rounded-sm mr-1"></span> Cumple</div>
-          <div className="flex items-center"><span className="w-3 h-3 bg-red-100 border border-red-500 rounded-sm mr-1"></span> No Cumple</div>
-          <div className="flex items-center"><span className="w-3 h-3 bg-blue-100 border border-blue-500 rounded-sm mr-1"></span> Planificado</div>
         </div>
       </div>
 
@@ -246,7 +249,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
               <th className="p-3 border-r border-slate-200 min-w-[200px] bg-slate-50 border-b-2 border-slate-300">Tarea Específica / Criterio</th>
               <th className="p-3 border-r border-slate-200 w-[60px] text-center">Detalle</th>
               <th className="p-3 border-r border-slate-200 min-w-[60px] text-center bg-slate-200">
-                 {currentYear - 1} {/* Dynamic History Year */}
+                 {/* Explicit Header Change requested by user */}
+                 {currentYear === 2025 ? '2025' : (currentYear - 1)}
               </th>
               {MONTHS.map(m => (
                 <th key={m} className="p-2 border-r border-slate-200 text-center min-w-[40px]">{m}</th>
@@ -255,8 +259,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {filteredActivities.length > 0 ? (
-              filteredActivities.map((activity) => {
+            {filteredActivities.map((activity) => {
                 const historicalCompliance = getHistoricalCompliance(activity);
 
                 return (
@@ -264,11 +267,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                   <td className="p-3 border-r border-slate-200 text-center font-medium bg-white">
                     <div className="text-sm font-bold text-slate-700">{activity.clause}</div>
                     {activity.subClause && <div className="text-[10px] text-slate-500 bg-slate-100 px-1 rounded inline-block mt-1">{activity.subClause}</div>}
-                    <div className="mt-1">
-                      <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold border border-slate-100 px-1 rounded">
-                        {activity.periodicity.substring(0,3)}
-                      </span>
-                    </div>
                   </td>
                   <td className="p-3 border-r border-slate-200 bg-white">
                     <div className="font-semibold text-slate-800 line-clamp-2" title={activity.clauseTitle}>{activity.clauseTitle}</div>
@@ -278,23 +276,16 @@ export const StandardView: React.FC<StandardViewProps> = ({
                       </span>
                     )}
                   </td>
-
                   <td className="p-3 border-r border-slate-200 bg-white">
-                    <div className="text-slate-600 text-[11px] leading-snug line-clamp-3" title={activity.relatedQuestions}>
+                    <div className="text-slate-600 text-[11px] leading-snug line-clamp-3">
                       {activity.relatedQuestions || <span className="text-slate-400 italic">Sin tarea específica definida</span>}
                     </div>
                   </td>
-                  
                   <td className="p-3 border-r border-slate-200 text-center bg-white">
-                    <button 
-                      onClick={() => setViewingActivity(activity)}
-                      className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition-colors"
-                      title="Ver detalle completo"
-                    >
+                    <button onClick={() => setViewingActivity(activity)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-full">
                       <Eye size={16} />
                     </button>
                   </td>
-                  
                   <td className={`p-3 border-r border-slate-200 text-center ${historicalCompliance ? 'bg-green-50' : 'bg-red-50'}`}>
                     <div className={`mx-auto w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
                       historicalCompliance 
@@ -305,108 +296,32 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     </div>
                   </td>
 
-                  {/* DYNAMIC CELLS BASED ON PERIODICITY */}
                   {renderPeriodicityCells(activity)}
 
                   <td className="p-3 text-center sticky right-0 bg-white shadow-l border-l border-slate-200">
-                    {activity.evidenceFile ? (
-                      <div className="flex flex-col items-center">
-                        <button 
-                          onClick={() => handleDownloadEvidence(activity)} 
-                          className="flex items-center text-blue-600 hover:underline mb-1 hover:bg-blue-50 p-1 rounded"
-                        >
-                          <Download size={14} className="mr-1" />
-                          <span className="truncate max-w-[60px] text-[10px]">Bajar</span>
-                        </button>
-                      </div>
+                    {activity.evidence ? (
+                      <button 
+                        onClick={() => handleDownloadEvidence(activity)} 
+                        className="flex flex-col items-center justify-center text-blue-600 hover:text-blue-800 mx-auto group"
+                        title={`Subido por: ${activity.evidence.uploadedBy}`}
+                      >
+                         {activity.evidence.type === 'LINK' ? <LinkIcon size={18} /> : <FileText size={18} />}
+                         <span className="text-[9px] mt-1 max-w-[60px] truncate">{activity.evidence.fileName}</span>
+                      </button>
                     ) : (
                       <button 
                         onClick={() => openUploadModal(activity.id)}
-                        className="flex items-center justify-center p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors mx-auto"
-                        title="Subir evidencia"
+                        className="flex items-center justify-center p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full mx-auto"
                       >
                         <Upload size={14} />
                       </button>
                     )}
                   </td>
                 </tr>
-              )})
-            ) : (
-              <tr>
-                <td colSpan={18} className="p-8 text-center text-slate-500">
-                  No hay actividades registradas para esta selección.
-                </td>
-              </tr>
-            )}
+              )})}
           </tbody>
         </table>
       </div>
-      
-      {/* Legend Footer */}
-      <div className="bg-slate-50 p-3 border-t border-slate-200 text-xs text-slate-500 flex justify-between">
-        <div>Total de Puntos: <strong>{filteredActivities.length}</strong></div>
-        <div>
-           Eficiencia ({currentYear}): <strong>
-             {currentYear > 2025 
-                ? 'N/A (Planificación)' 
-                : filteredActivities.length > 0 
-                  ? ((filteredActivities.filter(a => a.compliance2025).length / filteredActivities.length) * 100).toFixed(1) + '%'
-                  : '0%'
-             }
-           </strong>
-        </div>
-      </div>
-
-      {/* DETAIL MODAL */}
-      {viewingActivity && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-             <div className="p-5 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white">
-              <div>
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100 mb-1 inline-block">
-                  {viewingActivity.clause} {viewingActivity.subClause ? `- ${viewingActivity.subClause}` : ''}
-                </span>
-                <h3 className="text-lg font-bold text-slate-800">{viewingActivity.clauseTitle}</h3>
-              </div>
-              <button onClick={() => setViewingActivity(null)} className="text-slate-400 hover:text-slate-600">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-2">Descripción del Requisito (Norma)</h4>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-sm text-slate-700 leading-relaxed">
-                  {viewingActivity.description}
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-2">Contextualización (Central de Maderas)</h4>
-                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-sm text-slate-800 leading-relaxed italic">
-                  {viewingActivity.contextualization}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-2">Tarea / Criterio de Auditoría</h4>
-                <div className="flex items-start bg-blue-50 p-3 rounded-lg border border-blue-100">
-                   <AlertCircle size={18} className="text-blue-600 mt-0.5 mr-2 flex-shrink-0" />
-                   <p className="text-sm text-blue-900 font-medium">{viewingActivity.relatedQuestions}</p>
-                </div>
-              </div>
-              
-              <div className="flex justify-end pt-4 border-t border-slate-100">
-                 <button 
-                  onClick={() => setViewingActivity(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors text-sm font-medium"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* UPLOAD MODAL */}
       {uploadModalOpen && (
@@ -415,7 +330,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-800 flex items-center">
                 <Paperclip size={20} className="mr-2 text-slate-500" />
-                Cargar Evidencia ({currentYear})
+                Cargar Evidencia
               </h3>
               <button onClick={() => setUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
@@ -423,45 +338,57 @@ export const StandardView: React.FC<StandardViewProps> = ({
             </div>
             
             <div className="p-6">
-              <p className="text-sm text-slate-600 mb-6 text-center">
-                Seleccione el origen del archivo para la actividad seleccionada.
-              </p>
-              
-              <div className="space-y-3">
-                <button 
-                  onClick={() => performUpload('onedrive')}
-                  className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group"
-                >
-                  <div className="flex items-center">
-                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-lg mr-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              {!uploadType ? (
+                 <div className="space-y-3">
+                   <button 
+                    onClick={() => setUploadType('link')}
+                    className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group"
+                  >
+                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-lg mr-4 group-hover:bg-blue-600 group-hover:text-white">
                       <Cloud size={24} />
                     </div>
                     <div className="text-left">
-                      <span className="block font-bold text-slate-800 group-hover:text-blue-700">OneDrive / SharePoint</span>
-                      <span className="text-xs text-slate-500">Vincular archivo de la nube</span>
+                      <span className="block font-bold text-slate-800">OneDrive / SharePoint</span>
+                      <span className="text-xs text-slate-500">Pegar enlace del archivo</span>
                     </div>
-                  </div>
-                </button>
+                  </button>
 
-                <button 
-                  onClick={() => performUpload('local')}
-                  className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group"
-                >
-                  <div className="flex items-center">
-                    <div className="bg-slate-100 text-slate-600 p-2.5 rounded-lg mr-4 group-hover:bg-slate-800 group-hover:text-white transition-colors">
-                      <HardDrive size={24} />
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                  >
+                    <div className="bg-slate-100 text-slate-600 p-2.5 rounded-lg mr-4 group-hover:bg-slate-800 group-hover:text-white">
+                      <ImageIcon size={24} />
                     </div>
                     <div className="text-left">
-                      <span className="block font-bold text-slate-800">Dispositivo Local</span>
-                      <span className="text-xs text-slate-500">Subir PDF, Imagen o Excel</span>
+                      <span className="block font-bold text-slate-800">Foto o Archivo Local</span>
+                      <span className="text-xs text-slate-500">Subir imagen o PDF (Max 1MB)</span>
                     </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-            
-            <div className="bg-slate-50 p-3 text-center text-xs text-slate-400 border-t border-slate-100">
-              Formatos soportados: PDF, DOCX, XLSX, JPG
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    onChange={handleFileUpload} 
+                    accept="image/*,application/pdf"
+                  />
+                 </div>
+              ) : (
+                <div className="space-y-4">
+                   <p className="text-sm text-slate-600">Pegue el enlace del documento de OneDrive/SharePoint:</p>
+                   <input 
+                    type="text" 
+                    value={linkInput}
+                    onChange={e => setLinkInput(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://sharepoint.com/..."
+                   />
+                   <div className="flex justify-end gap-2">
+                     <button onClick={() => setUploadType(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded">Atrás</button>
+                     <button onClick={handleLinkSubmit} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar Enlace</button>
+                   </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

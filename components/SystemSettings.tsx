@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from 'react';
 import { Upload, Image as ImageIcon, Save, CheckCircle, Database, CloudLightning, AlertTriangle, RefreshCw, Fingerprint, Search, ShieldCheck } from 'lucide-react';
 import { dataService } from '../services/dataService';
@@ -27,24 +28,33 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
       
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreview(reader.result as string);
+        const result = reader.result as string;
+        // Basic check for size to prevent huge base64 strings
+        if (result.length > 800000) { // ~800KB limit warning
+           alert("La imagen es muy grande. Se recomienda usar imágenes menores a 500KB para optimizar la base de datos.");
+        }
+        setPreview(result);
         setMessage(null);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (preview) {
+      // Guardar en Base de Datos (a través del servicio)
+      await dataService.updateSettings({ companyLogo: preview });
+      // Actualizar estado local
       onLogoChange(preview);
-      setMessage('Logo actualizado correctamente.');
+      setMessage('Logo actualizado correctamente en la Base de Datos.');
       setTimeout(() => setMessage(null), 3000);
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setPreview(null);
-    onLogoChange(null); // Restore default SVG
+    await dataService.updateSettings({ companyLogo: null });
+    onLogoChange(null);
     setMessage('Logo restaurado a la versión predeterminada.');
     setTimeout(() => setMessage(null), 3000);
   };
@@ -73,29 +83,15 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
   };
 
   const handleSeedData = async () => {
-    if (!confirm(`Se enviarán datos al proyecto "${firebaseConfig.projectId}" (DB: ${DATABASE_ID}). ¿Continuar?`)) return;
+    if (!confirm(`Se enviarán datos al proyecto "${firebaseConfig.projectId}". ¿Continuar?`)) return;
     
     setIsSyncing(true);
-    setMessage(null); // Clear previous messages
     try {
       await dataService.seedInitialData();
       setMessage('✅ ¡Éxito! Datos sincronizados con Firebase Cloud.');
-      handleVerifyData(); // Auto verify after seed
-      alert(`Sincronización completada en proyecto: ${firebaseConfig.projectId}.\n\nIMPORTANTE: Si no ves los datos en la consola de Firebase, asegúrate de seleccionar la base de datos "${DATABASE_ID}" en el menú desplegable.`);
+      handleVerifyData();
     } catch (error: any) {
-      console.error("Error detallado:", error);
-      let errorMsg = 'Error desconocido.';
-      
-      if (error.code === 'permission-denied' || (error.message && error.message.includes('permission'))) {
-        errorMsg = 'PERMISO DENEGADO: Ve a Firebase Console -> Firestore -> Reglas y cámbialas a "allow read, write: if true;"';
-      } else if (error.code === 'not-found' || (error.message && error.message.includes('not found'))) {
-        errorMsg = 'BASE DE DATOS NO ENCONTRADA: Ve a Firebase Console y crea la base de datos Firestore.';
-      } else {
-        errorMsg = `Error técnico: ${error.message || JSON.stringify(error)}`;
-      }
-      
-      setMessage(`❌ ${errorMsg}`);
-      alert(errorMsg); // Force user to see the error
+      setMessage(`❌ Error: ${error.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -127,35 +123,14 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
             </h4>
             <p className={`text-sm mt-1 ${USE_CLOUD_DB ? 'text-green-700' : 'text-amber-700'}`}>
               {USE_CLOUD_DB 
-                ? 'Los datos se guardan en tiempo real en los servidores de Google.' 
-                : 'Los datos solo viven en este navegador. Activa Firebase para persistencia.'}
+                ? 'Los datos (incluyendo el Logo y las Evidencias) se guardan en la nube.' 
+                : 'Los datos solo viven en este navegador.'}
             </p>
-            
-            {/* Project ID Debugger */}
-            {USE_CLOUD_DB && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
-                  <Fingerprint size={14} className="mr-2 opacity-50" />
-                  Proyecto: <strong>{firebaseConfig.projectId}</strong>
-                </div>
-                <div className="flex items-center text-xs bg-white/50 p-2 rounded border border-green-200 text-green-800 font-mono">
-                  <Database size={14} className="mr-2 opacity-50" />
-                  Base de Datos: <strong>{DATABASE_ID}</strong>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
         {USE_CLOUD_DB && (
           <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
-            <div>
-              <h4 className="font-bold text-slate-700 mb-2">Gestión de Datos</h4>
-              <p className="text-sm text-slate-500 mb-4">
-                Herramientas para inicializar o verificar la conexión con la nube.
-              </p>
-            </div>
-            
             <div className="flex flex-wrap gap-3">
               <button 
                 onClick={handleSeedData}
@@ -179,45 +154,6 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
                 Verificar Integridad
               </button>
             </div>
-
-            {/* Verification Stats Result */}
-            {dbStats && (
-              <div className="mt-4 bg-white border border-slate-200 rounded-lg p-4 animate-in fade-in slide-in-from-top-2">
-                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Resultados del Diagnóstico</h5>
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="flex items-center">
-                      <div className="p-2 bg-blue-100 text-blue-600 rounded-lg mr-3">
-                        <ShieldCheck size={20} />
-                      </div>
-                      <div>
-                        <span className="block text-2xl font-bold text-slate-800">{dbStats.activities}</span>
-                        <span className="text-xs text-slate-500">Actividades/Requisitos</span>
-                      </div>
-                   </div>
-                   <div className="flex items-center">
-                      <div className="p-2 bg-purple-100 text-purple-600 rounded-lg mr-3">
-                        <Fingerprint size={20} />
-                      </div>
-                      <div>
-                        <span className="block text-2xl font-bold text-slate-800">{dbStats.users}</span>
-                        <span className="text-xs text-slate-500">Usuarios Registrados</span>
-                      </div>
-                   </div>
-                </div>
-                {dbStats.activities > 0 ? (
-                  <p className="mt-3 text-xs text-green-600 font-bold">✅ Conexión exitosa. La base de datos contiene información.</p>
-                ) : (
-                  <p className="mt-3 text-xs text-amber-600 font-bold">⚠️ Conexión exitosa pero la base de datos está vacía.</p>
-                )}
-              </div>
-            )}
-
-            {message && message.includes('Éxito') && (
-              <p className="mt-3 text-sm text-green-600 font-bold bg-green-50 p-2 rounded border border-green-100">{message}</p>
-            )}
-            {message && (message.includes('Error') || message.includes('❌')) && (
-              <p className="mt-3 text-sm text-red-600 font-bold bg-red-50 p-2 rounded border border-red-100">{message}</p>
-            )}
           </div>
         )}
       </div>
@@ -230,39 +166,18 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
         </h3>
 
         <div className="flex flex-col md:flex-row gap-8 items-start">
-          {/* Preview Section */}
           <div className="flex-1 bg-slate-50 rounded-xl p-6 border border-slate-200 flex flex-col items-center justify-center min-h-[200px] w-full">
             <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-4">Vista Previa</p>
             <div className="bg-white p-4 rounded shadow-sm border border-slate-100">
                {preview ? (
                 <img src={preview} alt="Logo Preview" className="max-h-24 max-w-full object-contain" />
               ) : (
-                <div className="text-slate-400 text-sm flex flex-col items-center">
-                   {/* Default SVG Preview */}
-                   <svg viewBox="0 0 280 80" className="h-16 w-auto opacity-50 grayscale">
-                    <g strokeLinecap="round" strokeLinejoin="round" fill="none">
-                      <path d="M 10 60 L 30 30 L 50 60" stroke="#B91C1C" strokeWidth="8" />
-                      <path d="M 30 60 L 50 30 L 70 60" stroke="#1F2937" strokeWidth="8" />
-                      <path d="M 50 60 L 70 30 L 90 60" stroke="#B91C1C" strokeWidth="8" />
-                      <rect x="64" y="52" width="12" height="12" transform="rotate(45 70 58)" fill="#1F2937" stroke="none" />
-                    </g>
-                    <g fontFamily="sans-serif">
-                      <text x="100" y="45" fontSize="22" fontWeight="800" fill="#1F2937">Central de</text>
-                      <text x="100" y="65" fontSize="22" fontWeight="800" fill="#1F2937">Maderas</text>
-                    </g>
-                  </svg>
-                  <span className="mt-2">(Logo Predeterminado)</span>
-                </div>
+                <span className="text-slate-400 text-sm">Logo Predeterminado</span>
               )}
             </div>
           </div>
 
-          {/* Controls Section */}
           <div className="flex-1 space-y-4">
-            <p className="text-sm text-slate-600">
-              Suba una imagen en formato JPG o PNG para reemplazar el logo en la barra lateral y en la pantalla de inicio de sesión.
-            </p>
-            
             <input 
               type="file" 
               ref={fileInputRef}
@@ -291,7 +206,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
                   }`}
                 >
                   <Save size={18} className="mr-2" />
-                  Guardar Cambios
+                  Guardar en BD
                 </button>
                 <button 
                   onClick={handleReset}
@@ -301,9 +216,8 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ currentLogo, onL
                 </button>
               </div>
             </div>
-
-            {message && !message.includes('Error') && !message.includes('❌') && !message.includes('Éxito') && !message.includes('Diagnóstico') && (
-              <div className={`mt-4 p-3 rounded-lg text-sm flex items-center ${message.includes('restaurado') ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
+             {message && (
+              <div className={`mt-4 p-3 rounded-lg text-sm flex items-center bg-blue-50 text-blue-700`}>
                 <CheckCircle size={16} className="mr-2" />
                 {message}
               </div>

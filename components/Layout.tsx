@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -12,7 +13,8 @@ import {
   LogOut,
   Sliders,
   CloudLightning,
-  HardDrive
+  HardDrive,
+  BookOpen
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -46,14 +48,15 @@ export const Layout: React.FC<LayoutProps> = ({
 
   // Config items only for Admins
   const configItems = currentUser.role === UserRole.ADMIN ? [
-    { id: 'requirements', label: 'Gestión de Requisitos', icon: Settings },
+    { id: 'norms', label: 'Gestión de Normas', icon: BookOpen },
+    { id: 'requirements', label: 'Requisitos y Matriz', icon: Settings },
     { id: 'users', label: 'Usuarios', icon: Users },
-    { id: 'settings', label: 'Configuración', icon: Sliders },
+    { id: 'settings', label: 'Configuración Global', icon: Sliders },
   ] : [];
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Sidebar - Changed to White to support colored Logo */}
+      {/* Sidebar */}
       <aside 
         className={`${
           isSidebarOpen ? 'w-64' : 'w-20'
@@ -78,7 +81,6 @@ export const Layout: React.FC<LayoutProps> = ({
               </svg>
             )
           ) : (
-             // Icon Only for collapsed state
              companyLogo ? (
                <img src={companyLogo} alt="Logo" className="h-8 w-8 object-contain rounded" />
              ) : (
