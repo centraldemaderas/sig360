@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, User } from 'lucide-react';
 import { User as UserType } from '../types';
+import { MOCK_USERS } from '../constants';
 
 interface LoginProps {
   onLogin: (user: UserType) => void;
@@ -15,8 +16,17 @@ export const Login: React.FC<LoginProps> = ({ onLogin, companyLogo, users }) => 
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Validate against the dynamic 'users' prop, not the static constant
-    const user = users.find(u => u.email === email && u.password === password);
+    // 1. Intentar validar con los usuarios que vienen de la Base de Datos
+    let user = users.find(u => u.email === email && u.password === password);
+    
+    // 2. FALLBACK DE EMERGENCIA (BOOTSTRAP):
+    // Si la lista 'users' está vacía (porque acabamos de conectar Firebase y no tiene datos),
+    // permitimos entrar con el usuario MOCK por defecto para poder ir a Configuración -> Cargar Datos.
+    // Una vez cargados los datos, 'users.length' será > 0 y este bloque se ignorará por seguridad.
+    if (!user && users.length === 0) {
+       console.warn("Base de datos vacía. Usando credencial de respaldo local para acceso inicial.");
+       user = MOCK_USERS.find(u => u.email === email && u.password === password);
+    }
     
     if (user) {
       onLogin(user);
@@ -65,6 +75,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin, companyLogo, users }) => 
           {error && (
             <div className="bg-red-50 text-red-700 p-4 rounded-xl text-sm text-center border border-red-100 font-medium">
               {error}
+            </div>
+          )}
+          
+          {/* Mensaje Informativo si es modo bootstrap */}
+          {users.length === 0 && (
+            <div className="bg-blue-50 text-blue-700 text-xs p-2 rounded mb-4 text-center border border-blue-100">
+               Inicialización: Accede con el admin por defecto para configurar la base de datos.
             </div>
           )}
           
