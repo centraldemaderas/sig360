@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy-app": "npm run build && firebase deploy"
+    "deploy-manual": "npm run build && npx firebase deploy"
   },
   "dependencies": {
     "firebase": "^10.8.0",
@@ -24,6 +24,7 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.2.2",
-    "vite": "^5.1.4"
+    "vite": "^5.1.4",
+    "firebase-tools": "^13.3.0"
   }
 }
