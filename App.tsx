@@ -16,23 +16,17 @@ import { Database, AlertTriangle } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
-  // App Config State
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
-
-  // Data State
   const [activities, setActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [standards, setStandards] = useState<StandardDefinition[]>([]);
-  
   const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
   const [dbError, setDbError] = useState<string | null>(null);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
-  
   const [currentYear, setCurrentYear] = useState<number>(2025);
+  const [activeView, setActiveView] = useState('dashboard');
 
   useEffect(() => {
     if (activitiesLoaded && usersLoaded) {
@@ -40,7 +34,6 @@ function App() {
     }
   }, [activitiesLoaded, usersLoaded]);
 
-  // --- DATA SUBSCRIPTIONS ---
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
@@ -57,7 +50,6 @@ function App() {
         console.error("Firestore Error (Activities):", error);
         setActivitiesLoaded(true); 
         if (USE_CLOUD_DB) setIsCloudConnected(false);
-        // Only set fatal dbError for specific critical failures, otherwise keep app running
         if (error?.code === 'failed-precondition' || error?.code === 'not-found') {
            setDbError("No se pudo conectar a la base de datos.");
         }
@@ -75,12 +67,10 @@ function App() {
       }
     );
 
-    // Subscribe to Norms
     const unsubscribeStandards = dataService.subscribeToStandards((data) => {
       setStandards(data);
     });
 
-    // Subscribe to Settings (Logo)
     const unsubscribeSettings = dataService.subscribeToSettings((data) => {
       if (data && data.companyLogo) {
         setCompanyLogo(data.companyLogo);
@@ -103,7 +93,6 @@ function App() {
   };
 
   const handleLogoChange = (logo: string | null) => {
-    // Optimistic UI Update
     setCompanyLogo(logo);
   };
 
@@ -145,8 +134,6 @@ function App() {
     }
   };
 
-  const [activeView, setActiveView] = useState('dashboard');
-
   if (isLoading) {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-slate-50 text-slate-500 font-medium space-y-4">
@@ -186,6 +173,21 @@ function App() {
   }
 
   const renderContent = () => {
+    // Check if dynamic standard view is requested
+    if (activeView.startsWith('std-')) {
+      const stdType = activeView.replace('std-', '');
+      return (
+        <StandardView 
+          standard={stdType} 
+          activities={activities} 
+          onUpdateActivity={handleUpdateActivity}
+          currentYear={currentYear}
+          setCurrentYear={setCurrentYear}
+          currentUser={currentUser}
+        />
+      );
+    }
+
     switch (activeView) {
       case 'dashboard':
         return <Dashboard />;
@@ -212,6 +214,7 @@ function App() {
             onAdd={handleAddActivity}
             onUpdate={handleUpdateActivity}
             onDelete={handleDeleteActivity}
+            standardsList={standards}
           />
         );
       case 'users':
@@ -230,39 +233,6 @@ function App() {
             onLogoChange={handleLogoChange}
           />
         );
-      case 'iso9001':
-        return (
-          <StandardView 
-            standard={StandardType.ISO9001} 
-            activities={activities} 
-            onUpdateActivity={handleUpdateActivity}
-            currentYear={currentYear}
-            setCurrentYear={setCurrentYear}
-            currentUser={currentUser}
-          />
-        );
-      case 'sgsst':
-        return (
-          <StandardView 
-            standard={StandardType.SGSST} 
-            activities={activities} 
-            onUpdateActivity={handleUpdateActivity}
-            currentYear={currentYear}
-            setCurrentYear={setCurrentYear}
-            currentUser={currentUser}
-          />
-        );
-      case 'fsc':
-        return (
-          <StandardView 
-            standard={StandardType.FSC} 
-            activities={activities} 
-            onUpdateActivity={handleUpdateActivity}
-            currentYear={currentYear}
-            setCurrentYear={setCurrentYear}
-            currentUser={currentUser}
-          />
-        );
       default:
         return <Dashboard />;
     }
@@ -276,6 +246,7 @@ function App() {
       onLogout={handleLogout}
       companyLogo={companyLogo}
       isCloudConnected={isCloudConnected}
+      standards={standards}
     >
       {renderContent()}
     </Layout>

@@ -21,9 +21,14 @@ import {
   Mail,
   BellRing,
   Trash2,
-  Clock
+  Clock,
+  Briefcase,
+  ChevronDown,
+  ChevronUp,
+  Shield,
+  Truck
 } from 'lucide-react';
-import { User, UserRole, Notification } from '../types';
+import { User, UserRole, Notification, StandardDefinition } from '../types';
 import { dataService } from '../services/dataService';
 
 interface LayoutProps {
@@ -34,6 +39,7 @@ interface LayoutProps {
   onLogout: () => void;
   companyLogo?: string | null;
   isCloudConnected?: boolean;
+  standards: StandardDefinition[];
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -43,11 +49,12 @@ export const Layout: React.FC<LayoutProps> = ({
   currentUser, 
   onLogout, 
   companyLogo,
-  isCloudConnected = false 
+  isCloudConnected = false,
+  standards
 }) => {
-  // Mobile-first approach: Start collapsed if screen is mobile or tablet (< 1024px)
   const [isSidebarOpen, setIsSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isAdminExpanded, setIsAdminExpanded] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -65,11 +72,27 @@ export const Layout: React.FC<LayoutProps> = ({
     }
   };
 
-  const navItems = [
+  const getStandardIcon = (type: string) => {
+    const t = type.toLowerCase();
+    if (t.includes('9001')) return FileText;
+    if (t.includes('sst')) return ShieldCheck;
+    if (t.includes('fsc')) return TreePine;
+    if (t.includes('vial') || t.includes('pesv')) return Truck;
+    return Briefcase;
+  };
+
+  // Main items: Dashboard + Dynamic Standards
+  const mainItems = [
     { id: 'dashboard', label: 'Tablero de Control', icon: LayoutDashboard },
-    { id: 'iso9001', label: 'ISO 9001:2015', icon: FileText },
-    { id: 'sgsst', label: 'SG-SST', icon: ShieldCheck },
-    { id: 'fsc', label: 'FSC', icon: TreePine },
+    ...standards.map(std => ({
+      id: `std-${std.type}`,
+      label: std.type,
+      icon: getStandardIcon(std.type)
+    }))
+  ];
+
+  const managementItems = [
+     { id: 'evidence-dashboard', label: 'Hallazgos y Evidencias', icon: AlertOctagon },
   ];
 
   const adminItems = [
@@ -79,15 +102,10 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'settings', label: 'Configuración Global', icon: Sliders },
   ];
 
-  const commonTools = [
-     { id: 'evidence-dashboard', label: 'Hallazgos y Evidencias', icon: AlertOctagon },
-  ];
-
-  const configItems = currentUser.role === UserRole.ADMIN ? adminItems : [];
+  const isAdmin = currentUser.role === UserRole.ADMIN;
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Sidebar */}
       <aside 
         className={`${
           isSidebarOpen ? 'w-64' : 'w-20'
@@ -138,7 +156,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
         <nav className="flex-1 py-4 flex flex-col overflow-y-auto scrollbar-thin px-3">
           <ul className="space-y-1 mb-6">
-            {navItems.map((item) => (
+            {mainItems.map((item) => (
               <li key={item.id}>
                 <button
                   onClick={() => setActiveView(item.id)}
@@ -162,11 +180,11 @@ export const Layout: React.FC<LayoutProps> = ({
             ))}
           </ul>
 
-          <ul className="space-y-1 border-t border-slate-100 pt-4">
+          <ul className="space-y-1 border-t border-slate-100 pt-4 mb-4">
              <li className="px-2 pb-2">
-                {isSidebarOpen && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-2">Gestión</span>}
+                {isSidebarOpen && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-2">Gestión Operativa</span>}
               </li>
-              {commonTools.map((item) => (
+              {managementItems.map((item) => (
                 <li key={item.id}>
                   <button
                     onClick={() => setActiveView(item.id)}
@@ -190,34 +208,45 @@ export const Layout: React.FC<LayoutProps> = ({
               ))}
           </ul>
 
-          {configItems.length > 0 && (
-            <ul className="space-y-1 border-t border-slate-100 pt-4 mt-2">
-              <li className="px-2 pb-2">
-                {isSidebarOpen && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-2">Administración</span>}
-              </li>
-               {configItems.map((item) => (
-                <li key={item.id}>
+          {isAdmin && (
+            <div className="border-t border-slate-100 pt-4 mt-2">
+              <button 
+                onClick={() => setIsAdminExpanded(!isAdminExpanded)}
+                className={`w-full flex items-center justify-between px-3 py-3 rounded-xl transition-all group font-bold text-slate-600 hover:bg-slate-50 ${isAdminExpanded ? 'text-slate-900' : ''}`}
+              >
+                <div className="flex items-center">
+                  <Shield size={22} className={`min-w-[22px] ${isAdminExpanded ? 'text-slate-900' : 'text-slate-400 group-hover:text-slate-900'}`} />
+                  {isSidebarOpen && <span className="ml-3 text-sm uppercase tracking-wider text-[11px]">Administración</span>}
+                </div>
+                {isSidebarOpen && (
+                  isAdminExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />
+                )}
+              </button>
+              
+              <div className={`mt-1 space-y-1 overflow-hidden transition-all duration-300 ${isAdminExpanded ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+                {adminItems.map((item) => (
                   <button
+                    key={item.id}
                     onClick={() => setActiveView(item.id)}
-                    className={`w-full flex items-center px-3 py-3 rounded-xl transition-all relative group font-medium ${
+                    className={`w-full flex items-center px-3 py-2.5 rounded-xl transition-all relative group font-medium ${
                       activeView === item.id 
                         ? 'bg-slate-800 text-white shadow-md' 
-                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
+                        : 'text-slate-500 hover:bg-slate-100/50 hover:text-slate-900'
+                    } ${isSidebarOpen ? 'ml-4 w-[calc(100%-1rem)]' : ''}`}
                   >
                     <item.icon 
-                      size={22} 
-                      className={`min-w-[22px] transition-colors ${
+                      size={18} 
+                      className={`min-w-[18px] transition-colors ${
                         activeView === item.id ? 'text-white' : 'text-slate-400 group-hover:text-slate-800'
                       }`} 
                     />
                     {isSidebarOpen && (
-                      <span className="ml-3 text-sm truncate">{item.label}</span>
+                      <span className="ml-3 text-xs truncate">{item.label}</span>
                     )}
                   </button>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </div>
+            </div>
           )}
         </nav>
 
@@ -250,13 +279,11 @@ export const Layout: React.FC<LayoutProps> = ({
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-50">
-        {/* Header - Fixed Z-index and overflow to allow Pop-over visibility */}
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 z-[2000] sticky top-0 shadow-sm overflow-visible">
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-              {navItems.find(n => n.id === activeView)?.label || configItems.find(n => n.id === activeView)?.label || commonTools.find(n => n.id === activeView)?.label || 'Sistema de Gestión'}
+              {[...mainItems, ...managementItems, ...adminItems].find(n => n.id === activeView)?.label || 'Sistema de Gestión'}
             </h1>
           </div>
           <div className="flex items-center space-x-4">
@@ -289,10 +316,8 @@ export const Layout: React.FC<LayoutProps> = ({
                 )}
               </button>
 
-              {/* Notifications Popover - Very High Z-index to float over table headers */}
               {isNotifOpen && (
                 <>
-                  {/* Backdrop for closing popover when clicking outside */}
                   <div className="fixed inset-0 z-[2500]" onClick={() => setIsNotifOpen(false)}></div>
                   <div className="absolute right-0 mt-3 w-85 bg-white rounded-3xl shadow-2xl border border-slate-200 z-[3000] overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 origin-top-right ring-1 ring-black/5">
                     <div className="p-5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
@@ -349,7 +374,6 @@ export const Layout: React.FC<LayoutProps> = ({
           </div>
         </header>
 
-        {/* Scrollable Content Area */}
         <div className="flex-1 overflow-auto p-6 scrollbar-thin z-0 bg-slate-50/30">
           <div className="max-w-7xl mx-auto">
             {children}

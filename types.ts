@@ -2,7 +2,8 @@
 export enum StandardType {
   ISO9001 = 'ISO 9001:2015 (Calidad)',
   SGSST = 'SG-SST (Seguridad y Salud)',
-  FSC = 'FSC (Cadena de Custodia)'
+  FSC = 'FSC (Cadena de Custodia)',
+  PESV = 'Plan Estratégico de Seguridad Vial'
 }
 
 export enum ComplianceStatus {
@@ -84,8 +85,8 @@ export interface Activity {
   clauseTitle: string; 
   description: string; 
   contextualization: string; 
-  relatedQuestions: string;
-  standards: (StandardType | string)[]; 
+  relatedQuestions: string; // This stores the "Tarea Específica"
+  standards: string[]; // Dynamic standards
   responsibleArea: string;
   periodicity: Periodicity; 
   compliance2024: boolean; 

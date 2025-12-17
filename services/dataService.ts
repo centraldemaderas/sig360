@@ -1,11 +1,9 @@
 
 import { db, USE_CLOUD_DB } from '../firebaseConfig';
 import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, getDocs, where, orderBy, limit } from 'firebase/firestore';
-// Added UserRole to the imports from ../types to fix the errors on lines 392, 401, and 410
 import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole } from '../types';
 import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS } from '../constants';
 
-// Collection Names
 const COLL_ACTIVITIES = 'activities';
 const COLL_USERS = 'users';
 const COLL_STANDARDS = 'standards';
@@ -14,8 +12,6 @@ const COLL_NOTIFICATIONS = 'notifications';
 const DOC_SETTINGS_GENERAL = 'general';
 
 class DataService {
-  
-  // --- SUBSCRIPTIONS (REAL-TIME UPDATES) ---
   
   subscribeToActivities(onUpdate: (data: Activity[]) => void, onError?: (error: any) => void) {
     if (USE_CLOUD_DB && db) {
@@ -111,6 +107,8 @@ class DataService {
       return onSnapshot(q, (snapshot) => {
         const stds: StandardDefinition[] = [];
         snapshot.forEach(doc => stds.push({ ...doc.data(), id: doc.id } as StandardDefinition));
+        // Sort for consistent sidebar order
+        stds.sort((a, b) => a.type.localeCompare(b.type));
         onUpdate(stds);
       });
     } else {
@@ -149,8 +147,6 @@ class DataService {
       return () => window.removeEventListener('local-data-changed', listener);
     }
   }
-
-  // --- ACTIONS ---
 
   async createNotification(notif: Omit<Notification, 'id'>) {
     const usersSnapshot = await this.getUsersOnce();
@@ -384,7 +380,6 @@ class DataService {
        batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(data)));
     }
 
-    // Seed specifically requested users
     const seedUsers: User[] = [
       {
         id: 'u-david',
@@ -421,9 +416,10 @@ class DataService {
     }
 
     const defaultStandards: StandardDefinition[] = [
-      { id: 'std-iso', type: StandardType.ISO9001, description: 'Norma Internacional de Sistemas de Gestión de Calidad.', objective: 'Aumentar la satisfacción del cliente.', certifyingBody: 'ICONTEC', comments: [] },
-      { id: 'std-sst', type: StandardType.SGSST, description: 'Sistema de Gestión de Seguridad y Salud en el Trabajo.', objective: 'Prevenir lesiones y deterioro de la salud.', certifyingBody: 'ARL / MinTrabajo', comments: [] },
-      { id: 'std-fsc', type: StandardType.FSC, description: 'Certificación de manejo forestal responsable.', objective: 'Garantizar la trazabilidad de la madera.', certifyingBody: 'FSC International', comments: [] }
+      { id: 'std-iso', type: StandardType.ISO9001, description: 'Sistemas de Gestión de Calidad.', objective: 'Mejora continua y satisfacción del cliente.', certifyingBody: 'ICONTEC', comments: [] },
+      { id: 'std-sst', type: StandardType.SGSST, description: 'Sistemas de Seguridad y Salud en el Trabajo.', objective: 'Prevención de riesgos laborales.', certifyingBody: 'ARL', comments: [] },
+      { id: 'std-fsc', type: StandardType.FSC, description: 'Manejo forestal responsable.', objective: 'Sustentabilidad ambiental.', certifyingBody: 'FSC Int.', comments: [] },
+      { id: 'std-pesv', type: StandardType.PESV, description: 'Plan Estratégico de Seguridad Vial.', objective: 'Reducción de accidentalidad vial.', certifyingBody: 'SuperTransporte', comments: [] }
     ];
 
     for (const std of defaultStandards) {

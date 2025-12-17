@@ -12,7 +12,7 @@ import {
 import { dataService } from '../services/dataService';
 
 interface StandardViewProps {
-  standard: StandardType;
+  standard: string;
   activities: Activity[];
   onUpdateActivity: (activity: Activity) => void;
   currentYear: number;
@@ -29,20 +29,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
   currentUser
 }) => {
   const [selectedArea, setSelectedArea] = useState('ALL');
-  
-  // Modals state
   const [modalOpen, setModalOpen] = useState(false);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
   const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
-  
-  // Form and Loading states
   const [isSaving, setIsSaving] = useState(false);
   const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [adminComment, setAdminComment] = useState('');
   const [updateNote, setUpdateNote] = useState('');
-  
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const filteredActivities = activities.filter(a => {
@@ -70,7 +65,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeActivityId || activeMonthIndex === null) return;
-
     setIsSaving(true);
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -87,14 +81,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const getPlanForYear = (activity: Activity, year: number): MonthlyExecution[] => {
-    if (activity.plans && activity.plans[year]) {
-      return activity.plans[year];
-    }
-    
-    if (year === 2025 && activity.monthlyPlan) {
-      return activity.monthlyPlan;
-    }
-
+    if (activity.plans && activity.plans[year]) return activity.plans[year];
+    if (year === 2025 && activity.monthlyPlan) return activity.monthlyPlan;
     return Array.from({ length: 12 }, (_, i) => {
       let isPlanned = false;
       switch (activity.periodicity) {
@@ -111,15 +99,10 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const updateActivityEvidence = async (url: string, type: 'FILE' | 'LINK', fileName: string) => {
       const activityToUpdate = activities.find(a => a.id === activeActivityId);
       if (!activityToUpdate || activeMonthIndex === null) return;
-
       const currentYearPlan = getPlanForYear(activityToUpdate, currentYear);
       const existingItem = currentYearPlan[activeMonthIndex];
       const existingHistory = existingItem.evidence?.history || [];
-
-      // If an Admin is uploading, we could potentially set status to APPROVED immediately
-      // But keeping it PENDING for traceability is often better.
       const initialStatus = 'PENDING';
-
       const updateLog: CommentLog = {
         id: `log-upd-${Date.now()}`,
         text: updateNote || (existingItem.evidence ? 'Se cargó una nueva versión de la evidencia para revisión.' : 'Carga inicial de evidencia.'),
@@ -127,16 +110,13 @@ export const StandardView: React.FC<StandardViewProps> = ({
         date: new Date().toLocaleString(),
         status: initialStatus
       };
-
       const newYearPlan = currentYearPlan.map((item, index) => {
         if (index !== activeMonthIndex) return item;
         return {
           ...item,
           executed: true,
           evidence: {
-            url,
-            type,
-            fileName,
+            url, type, fileName,
             uploadedBy: currentUser.name,
             uploadedAt: new Date().toLocaleString(),
             status: initialStatus,
@@ -145,22 +125,13 @@ export const StandardView: React.FC<StandardViewProps> = ({
           } as Evidence
         };
       });
-
       const updatedActivity: Activity = {
         ...activityToUpdate,
-        plans: {
-          ...(activityToUpdate.plans || {}),
-          [currentYear]: newYearPlan
-        }
+        plans: { ...(activityToUpdate.plans || {}), [currentYear]: newYearPlan }
       };
-
       await onUpdateActivity(updatedActivity);
-      
       const allUsers = await dataService.getUsersOnce();
-      const targetUsers = allUsers.filter(u => 
-        u.role === UserRole.ADMIN || (u.assignedArea === activityToUpdate.responsibleArea)
-      );
-
+      const targetUsers = allUsers.filter(u => u.role === UserRole.ADMIN || (u.assignedArea === activityToUpdate.responsibleArea));
       for (const target of targetUsers) {
         await dataService.createNotification({
           userId: target.id,
@@ -171,22 +142,18 @@ export const StandardView: React.FC<StandardViewProps> = ({
           type: 'NEW_UPLOAD'
         });
       }
-
       setIsSaving(false);
       setModalOpen(false);
   };
 
   const handleAdminVerification = async (status: 'APPROVED' | 'REJECTED') => {
     if (!activeActivityId || activeMonthIndex === null) return;
-    
     setIsSaving(true);
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
-    
     const currentYearPlan = getPlanForYear(activityToUpdate, currentYear);
     const targetPlan = currentYearPlan[activeMonthIndex];
     if (!targetPlan || !targetPlan.evidence) return;
-
     const newCommentEntry: CommentLog = {
       id: `log-adm-${Date.now()}`,
       text: adminComment || (status === 'APPROVED' ? 'Evidencia validada y aprobada.' : 'Evidencia rechazada por inconformidad.'),
@@ -194,10 +161,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
       date: new Date().toLocaleString(),
       status: status
     };
-
     const newYearPlan = currentYearPlan.map((item, index) => {
       if (index !== activeMonthIndex) return item;
-      
       const updatedEvidence: Evidence = {
         ...(item.evidence as Evidence),
         status: status,
@@ -206,23 +171,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
         rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
         history: [newCommentEntry, ...(item.evidence?.history || [])]
       };
-
       return { ...item, evidence: updatedEvidence };
     });
-
     const updatedActivity: Activity = {
       ...activityToUpdate,
-      plans: {
-        ...(activityToUpdate.plans || {}),
-        [currentYear]: newYearPlan
-      }
+      plans: { ...(activityToUpdate.plans || {}), [currentYear]: newYearPlan }
     };
-
     await onUpdateActivity(updatedActivity);
-
     const allUsers = await dataService.getUsersOnce();
     const areaUsers = allUsers.filter(u => u.assignedArea === activityToUpdate.responsibleArea);
-    
     for (const targetUser of areaUsers) {
       await dataService.createNotification({
         userId: targetUser.id,
@@ -235,20 +192,16 @@ export const StandardView: React.FC<StandardViewProps> = ({
         type: status === 'APPROVED' ? 'APPROVAL' : 'REJECTION'
       });
     }
-
     setIsSaving(false);
     setModalOpen(false);
   };
 
   const handleDownloadEvidence = (url: string, fileName: string, type: 'FILE' | 'LINK') => {
-    if (type === 'LINK') {
-      window.open(url, '_blank');
-    } else {
+    if (type === 'LINK') { window.open(url, '_blank'); } 
+    else {
       const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
+      link.href = url; link.download = fileName;
+      document.body.appendChild(link); link.click();
       document.body.removeChild(link);
     }
   };
@@ -258,7 +211,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const cells = [];
     let i = 0;
     const isFutureYear = currentYear > new Date().getFullYear();
-
     while (i < 12) {
       let colSpan = 1;
       switch (activity.periodicity) {
@@ -269,57 +221,32 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.MONTHLY: default: colSpan = 1; break;
       }
       if (i + colSpan > 12) colSpan = 12 - i;
-
       let evidenceFound = null;
       let evidenceIndex = -1;
       let isPlanned = false;
       let plannedIndex = -1;
-
       for (let k = i; k < i + colSpan; k++) {
-        if (plan[k]?.evidence) {
-          evidenceFound = plan[k].evidence;
-          evidenceIndex = k;
-        }
-        if (plan[k]?.planned) {
-          isPlanned = true;
-          plannedIndex = k;
-        }
+        if (plan[k]?.evidence) { evidenceFound = plan[k].evidence; evidenceIndex = k; }
+        if (plan[k]?.planned) { isPlanned = true; plannedIndex = k; }
       }
-      
       let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i + colSpan - 1);
       let cellBg = "bg-slate-50"; 
       let cellContent = null;
       let borderColor = "border-slate-200";
-
       if (evidenceFound) {
-        if (evidenceFound.status === 'APPROVED') {
-          cellBg = "bg-green-100 border-green-300";
-        } else if (evidenceFound.status === 'REJECTED') {
-           cellBg = "bg-orange-100 border-orange-300";
-        } else {
-           cellBg = "bg-blue-100 border-blue-300";
-        }
+        if (evidenceFound.status === 'APPROVED') { cellBg = "bg-green-100 border-green-300"; } 
+        else if (evidenceFound.status === 'REJECTED') { cellBg = "bg-orange-100 border-orange-300"; } 
+        else { cellBg = "bg-blue-100 border-blue-300"; }
       } else if (isPlanned) {
-         if (isFutureYear) {
-            cellBg = "bg-slate-200 text-slate-400"; 
-            cellContent = <span className="text-[9px] font-bold">P</span>;
-         } else {
+         if (isFutureYear) { cellBg = "bg-slate-200 text-slate-400"; cellContent = <span className="text-[9px] font-bold">P</span>; } 
+         else {
             const currentRealMonth = new Date().getMonth();
             const currentRealYear = new Date().getFullYear();
             const isOverdue = currentYear < currentRealYear || (currentYear === currentRealYear && i <= currentRealMonth);
-            
-            if (isOverdue) {
-              cellBg = "bg-red-50 border-red-200"; 
-              cellContent = <span className="text-[10px] font-bold text-red-300">!</span>;
-            } else {
-              cellBg = "bg-slate-200 border-slate-300"; 
-              cellContent = <span className="text-[9px] font-bold text-slate-400">P</span>;
-            }
+            if (isOverdue) { cellBg = "bg-red-50 border-red-200"; cellContent = <span className="text-[10px] font-bold text-red-300">!</span>; } 
+            else { cellBg = "bg-slate-200 border-slate-300"; cellContent = <span className="text-[9px] font-bold text-slate-400">P</span>; }
          }
-      } else {
-        cellBg = "bg-slate-50 opacity-50"; 
-      }
-
+      } else { cellBg = "bg-slate-50 opacity-50"; }
       cells.push(
         <td key={i} colSpan={colSpan} className={`border-r p-1 text-center transition-all relative group ${cellBg} ${borderColor} border-b`}>
           <div className="w-full h-full min-h-[40px] flex items-center justify-center relative">
@@ -328,7 +255,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                  {evidenceFound.status === 'APPROVED' && <Check size={14} className="text-green-600" />}
                  {evidenceFound.status === 'REJECTED' && <AlertCircle size={14} className="text-orange-600" />}
                  {evidenceFound.status === 'PENDING' && <Clock size={14} className="text-blue-600" />}
-                 
                  <div className="absolute inset-0 bg-white/90 hidden group-hover:flex items-center justify-center space-x-2 rounded shadow-sm z-10">
                     <button onClick={() => handleDownloadEvidence(evidenceFound!.url, evidenceFound!.fileName, evidenceFound!.type)} className="p-1 hover:bg-slate-100 rounded text-slate-600" title="Ver Evidencia"><Eye size={14} /></button>
                     <button onClick={() => openModal(activity.id, interactionIndex)} className="p-1 hover:bg-slate-100 rounded text-blue-600" title={currentUser.role === UserRole.ADMIN ? "Verificar" : "Actualizar"}>
@@ -357,12 +283,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
     plan.forEach((m, idx) => {
       if (m.planned) {
         totalPlanned++;
-        if (m.evidence) {
-          totalExecuted++;
-          if (m.evidence.status === 'APPROVED') totalApproved++;
-        } else if (currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth)) {
-          totalOverdue++;
-        }
+        if (m.evidence) { totalExecuted++; if (m.evidence.status === 'APPROVED') totalApproved++; } 
+        else if (currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth)) { totalOverdue++; }
       }
     });
     if (totalOverdue > 0) return { status: 'DELAYED', color: 'bg-red-100 text-red-700 border-red-200', label: `${totalOverdue} Pend` };
@@ -382,9 +304,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
-  const activePlan = activeActivity && activeMonthIndex !== null 
-    ? getPlanForYear(activeActivity, currentYear)[activeMonthIndex]
-    : null;
+  const activePlan = activeActivity && activeMonthIndex !== null ? getPlanForYear(activeActivity, currentYear)[activeMonthIndex] : null;
   const activeEvidence = activePlan?.evidence || null;
 
   return (
@@ -438,11 +358,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                   <td className="p-3 border-r border-slate-200 bg-white relative">
                     <div className="flex justify-between items-start group">
                       <div className="font-semibold text-slate-800 line-clamp-2 pr-6" title={activity.clauseTitle}>{activity.clauseTitle}</div>
-                      <button 
-                        onClick={() => openInfoModal(activity.id)}
-                        className="text-blue-400 hover:text-blue-600 transition-colors p-1 rounded-full hover:bg-blue-50"
-                        title="Ver detalles del requisito"
-                      >
+                      <button onClick={() => openInfoModal(activity.id)} className="text-blue-400 hover:text-blue-600 transition-colors p-1 rounded-full hover:bg-blue-50" title="Ver detalles del requisito">
                         <Info size={14} />
                       </button>
                     </div>
@@ -467,15 +383,12 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </table>
       </div>
 
-      {/* INFO MODAL */}
       {infoModalOpen && activeActivity && (
         <div className="fixed inset-0 bg-slate-900/80 flex items-start justify-center z-[9999] p-4 pt-12 backdrop-blur-md overflow-hidden">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col animate-in fade-in slide-in-from-top-8 duration-500 border border-slate-200">
              <div className="p-6 bg-slate-900 text-white flex justify-between items-center shrink-0">
                 <div className="flex items-center">
-                   <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl mr-5 shadow-xl shadow-blue-500/30">
-                      <BookOpen size={24} className="text-white" />
-                   </div>
+                   <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl mr-5 shadow-xl shadow-blue-500/30"><BookOpen size={24} className="text-white" /></div>
                    <div>
                       <h3 className="text-lg font-black leading-tight tracking-tight">{activeActivity.clauseTitle}</h3>
                       <div className="flex gap-2 mt-1.5">
@@ -484,100 +397,61 @@ export const StandardView: React.FC<StandardViewProps> = ({
                       </div>
                    </div>
                 </div>
-                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-all text-slate-400 hover:text-white group">
-                  <X size={24} className="group-active:scale-90 transition-transform" />
-                </button>
+                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-all text-slate-400 hover:text-white group"><X size={24} className="group-active:scale-90 transition-transform" /></button>
              </div>
-             
              <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin bg-white flex-1">
                 <div className="space-y-3">
-                   <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">
-                      <ShieldCheck size={14} className="mr-2 text-slate-300" /> Descripción Oficial Integra
-                   </div>
-                   <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[13px] text-slate-700 leading-relaxed italic whitespace-pre-wrap font-medium shadow-inner">
-                      "{activeActivity.description}"
-                   </div>
+                   <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]"><ShieldCheck size={14} className="mr-2 text-slate-300" /> Descripción Oficial Integra</div>
+                   <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[13px] text-slate-700 leading-relaxed italic whitespace-pre-wrap font-medium shadow-inner">"{activeActivity.description}"</div>
                 </div>
-
                 <div className="space-y-3">
-                   <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-[0.2em]">
-                      <Target size={14} className="mr-2" /> Explicación Detallada
-                   </div>
-                   <div className="bg-blue-50/40 p-5 rounded-2xl border border-blue-100/50 text-[13px] text-slate-800 leading-relaxed font-semibold whitespace-pre-wrap shadow-inner">
-                      {activeActivity.contextualization}
-                   </div>
+                   <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-[0.2em]"><Target size={14} className="mr-2" /> Explicación Detallada</div>
+                   <div className="bg-blue-50/40 p-5 rounded-2xl border border-blue-100/50 text-[13px] text-slate-800 leading-relaxed font-semibold whitespace-pre-wrap shadow-inner">{activeActivity.contextualization}</div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                    <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center">
-                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0">
-                        <Briefcase size={18} className="text-slate-400" />
-                      </div>
+                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0"><Briefcase size={18} className="text-slate-400" /></div>
                       <div className="min-w-0">
                         <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Responsable</div>
                         <p className="text-xs font-black text-slate-900 truncate">{activeActivity.responsibleArea}</p>
                       </div>
                    </div>
                    <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center">
-                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0">
-                        <Calendar size={18} className="text-slate-400" />
-                      </div>
+                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0"><Calendar size={18} className="text-slate-400" /></div>
                       <div className="min-w-0">
                         <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Periodicidad</div>
                         <p className="text-xs font-black text-slate-900 truncate">{activeActivity.periodicity}</p>
                       </div>
                    </div>
                 </div>
-
                 <div className="space-y-3">
-                   <div className="flex items-center text-amber-600 font-black text-[9px] uppercase tracking-[0.2em]">
-                      <CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio de Cumplimiento
-                   </div>
-                   <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-100/50 text-[13px] text-amber-950 leading-relaxed whitespace-pre-wrap font-black shadow-inner">
-                      {activeActivity.relatedQuestions}
-                   </div>
+                   <div className="flex items-center text-amber-600 font-black text-[9px] uppercase tracking-[0.2em]"><CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio de Cumplimiento</div>
+                   <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-100/50 text-[13px] text-amber-950 leading-relaxed whitespace-pre-wrap font-black shadow-inner">{activeActivity.relatedQuestions}</div>
                 </div>
              </div>
-
              <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
-                <button 
-                  onClick={() => setInfoModalOpen(false)}
-                  className="px-8 py-3 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 transition-all shadow-xl active:scale-95 border border-slate-700"
-                >
-                   Finalizar Consulta
-                </button>
+                <button onClick={() => setInfoModalOpen(false)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 transition-all shadow-xl active:scale-95 border border-slate-700">Finalizar Consulta</button>
              </div>
           </div>
         </div>
       )}
 
-      {/* VERIFICATION / UPLOAD MODAL */}
       {modalOpen && activeActivity && activeMonthIndex !== null && (
         <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-[9000] p-4 pt-12 backdrop-blur-sm overflow-hidden">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300 border border-slate-200">
-            {/* Modal Loading Overlay */}
             {isSaving && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-[9999] flex flex-col items-center justify-center space-y-4">
                  <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
                  <p className="text-sm font-black text-blue-900 uppercase tracking-widest">Sincronizando Datos...</p>
               </div>
             )}
-
             <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
               <div>
-                <h3 className="text-xl font-black text-slate-900 flex items-center tracking-tight">
-                   {activeEvidence ? 'Verificación de Evidencia' : 'Carga de Evidencia'}
-                </h3>
+                <h3 className="text-xl font-black text-slate-900 flex items-center tracking-tight">{activeEvidence ? 'Verificación de Evidencia' : 'Carga de Evidencia'}</h3>
                 <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{MONTHS[activeMonthIndex]} {currentYear} • {activeActivity.clauseTitle}</p>
               </div>
-              <button 
-                onClick={() => !isSaving && setModalOpen(false)} 
-                className={`p-2 rounded-full transition-colors ${isSaving ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-              >
-                <X size={24} />
-              </button>
+              <button onClick={() => !isSaving && setModalOpen(false)} className={`p-2 rounded-full transition-colors ${isSaving ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}><X size={24} /></button>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
               {activeEvidence ? (
                 <div className="bg-blue-50/30 border border-blue-100 p-5 rounded-2xl">
@@ -585,21 +459,14 @@ export const StandardView: React.FC<StandardViewProps> = ({
                       <span className="text-[10px] font-black text-blue-900 uppercase tracking-[0.2em] bg-blue-100/50 px-2 py-1 rounded-lg border border-blue-200/50">Soporte</span>
                       <span className={`text-[9px] font-black px-3 py-1 rounded-full shadow-sm border ${
                         activeEvidence.status === 'APPROVED' ? 'bg-green-100 text-green-800 border-green-200' : 
-                        activeEvidence.status === 'REJECTED' ? 'bg-orange-100 text-orange-800 border-orange-200' : 
-                        'bg-blue-100 text-blue-800 border-blue-200'
-                      }`}>
-                         {activeEvidence.status === 'PENDING' ? 'Bajo Revisión' : activeEvidence.status === 'APPROVED' ? 'Certificado' : 'No Conforme'}
-                      </span>
+                        activeEvidence.status === 'REJECTED' ? 'bg-orange-100 text-orange-800 border-orange-200' : 'bg-blue-100 text-blue-800 border-blue-200'
+                      }`}>{activeEvidence.status === 'PENDING' ? 'Bajo Revisión' : activeEvidence.status === 'APPROVED' ? 'Certificado' : 'No Conforme'}</span>
                    </div>
                    <div className="flex items-center space-x-4 mb-6">
-                      <div className="p-3 bg-white rounded-xl shadow-sm border border-blue-100/50 shrink-0">
-                        <FileText className="text-blue-600" size={24} />
-                      </div>
+                      <div className="p-3 bg-white rounded-xl shadow-sm border border-blue-100/50 shrink-0"><FileText className="text-blue-600" size={24} /></div>
                       <span className="text-sm text-slate-900 font-black truncate pr-4">{activeEvidence.fileName}</span>
                    </div>
-                   <div className="flex">
-                      <button onClick={() => handleDownloadEvidence(activeEvidence.url, activeEvidence.fileName, activeEvidence.type)} className="flex-1 bg-white border border-blue-100 text-blue-700 py-3 rounded-xl text-xs font-black hover:bg-blue-50 flex items-center justify-center shadow-sm transition-all"><ExternalLink size={16} className="mr-2" /> Abrir Documento</button>
-                   </div>
+                   <div className="flex"><button onClick={() => handleDownloadEvidence(activeEvidence.url, activeEvidence.fileName, activeEvidence.type)} className="flex-1 bg-white border border-blue-100 text-blue-700 py-3 rounded-xl text-xs font-black hover:bg-blue-50 flex items-center justify-center shadow-sm transition-all"><ExternalLink size={16} className="mr-2" /> Abrir Documento</button></div>
                 </div>
               ) : (
                 <div className="text-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center">
@@ -607,23 +474,16 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    <p className="text-slate-500 text-sm font-black text-center px-4">No se ha registrado evidencia para este periodo</p>
                 </div>
               )}
-
-              {/* TRACEABILITY */}
               {activeEvidence && activeEvidence.history && activeEvidence.history.length > 0 && (
                 <div className="space-y-4">
-                   <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
-                     <History size={14} className="mr-2" /> Trazabilidad de Gestión
-                   </h4>
+                   <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center"><History size={14} className="mr-2" /> Trazabilidad de Gestión</h4>
                    <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                      {activeEvidence.history.map((log) => (
                        <div key={log.id} className="relative pl-8">
                          <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-sm z-10 ${
                            log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : 
-                           log.status === 'REJECTED' ? 'bg-orange-100 border-orange-500 text-orange-600' : 
-                           'bg-blue-100 border-blue-500 text-blue-600'
-                         }`}>
-                            {log.status === 'APPROVED' ? <Check size={12} /> : log.status === 'REJECTED' ? <ThumbsDown size={12} /> : <Upload size={12} />}
-                         </div>
+                           log.status === 'REJECTED' ? 'bg-orange-100 border-orange-500 text-orange-600' : 'bg-blue-100 border-blue-500 text-blue-600'
+                         }`}>{log.status === 'APPROVED' ? <Check size={12} /> : log.status === 'REJECTED' ? <ThumbsDown size={12} /> : <Upload size={12} />}</div>
                          <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
                            <div className="flex justify-between items-center mb-1">
                              <span className="text-xs font-black text-slate-900">{log.author}</span>
@@ -636,13 +496,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                 </div>
               )}
-
-              {/* ADMIN ACTION: ONLY IF EVIDENCE EXISTS AND IS NOT YET APPROVED */}
               {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status !== 'APPROVED' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
-                   <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                      <p className="text-[11px] text-amber-950 font-black flex items-center uppercase tracking-widest"><ShieldCheck size={16} className="mr-2" /> Decisión Auditora</p>
-                   </div>
+                   <div className="bg-amber-50 p-4 rounded-xl border border-amber-100"><p className="text-[11px] text-amber-950 font-black flex items-center uppercase tracking-widest"><ShieldCheck size={16} className="mr-2" /> Decisión Auditora</p></div>
                    <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:border-blue-500 outline-none min-h-[100px] bg-slate-50 transition-all font-bold placeholder:text-slate-300" placeholder="Escriba aquí los hallazgos de la revisión..." />
                    <div className="flex space-x-3">
                       <button onClick={() => handleAdminVerification('REJECTED')} disabled={isSaving} className="flex-1 bg-white border-2 border-orange-200 text-orange-700 py-2.5 rounded-2xl font-black text-xs hover:bg-orange-50 flex items-center justify-center shadow-md transition-all active:scale-95 disabled:opacity-50"><ThumbsDown size={18} className="mr-2.5" /> Rechazar</button>
@@ -650,30 +506,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
                    </div>
                 </div>
               )}
-
-              {/* UPLOAD SECTION: Always visible if not approved */}
               {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.LEADER) && (!activeEvidence || activeEvidence?.status !== 'APPROVED') && (
                  <div className="space-y-4 pt-4 border-t border-slate-100">
                     <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                        <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center">
-                          <RefreshCw size={14} className="mr-2 text-blue-600" /> 
-                          {activeEvidence ? 'Corregir o Actualizar Evidencia' : 'Cargar Evidencia'}
-                        </h4>
-                        <textarea 
-                          value={updateNote}
-                          onChange={e => setUpdateNote(e.target.value)}
-                          placeholder="Descripción del documento o aclaración sobre la carga..."
-                          className="w-full border border-slate-200 rounded-xl p-4 text-sm mb-4 outline-none focus:border-blue-500 bg-white min-h-[100px] transition-all font-bold placeholder:text-slate-300"
-                        />
-
+                        <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center"><RefreshCw size={14} className="mr-2 text-blue-600" /> {activeEvidence ? 'Corregir o Actualizar Evidencia' : 'Cargar Evidencia'}</h4>
+                        <textarea value={updateNote} onChange={e => setUpdateNote(e.target.value)} placeholder="Descripción del documento o aclaración sobre la carga..." className="w-full border border-slate-200 rounded-xl p-4 text-sm mb-4 outline-none focus:border-blue-500 bg-white min-h-[100px] transition-all font-bold placeholder:text-slate-300" />
                         {!uploadType ? (
                           <div className="grid grid-cols-2 gap-4">
-                              <button onClick={() => setUploadType('link')} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-blue-200 hover:bg-blue-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50">
-                                <Cloud size={20} className="text-blue-500 mr-2" /> Enlace Web
-                              </button>
-                              <button onClick={() => fileInputRef.current?.click()} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-slate-300 hover:bg-slate-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50">
-                                <ImageIcon size={20} className="text-slate-500 mr-2" /> Archivo local
-                              </button>
+                              <button onClick={() => setUploadType('link')} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-blue-200 hover:bg-blue-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Cloud size={20} className="text-blue-500 mr-2" /> Enlace Web</button>
+                              <button onClick={() => fileInputRef.current?.click()} disabled={isSaving} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-slate-300 hover:bg-slate-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"><ImageIcon size={20} className="text-slate-500 mr-2" /> Archivo local</button>
                               <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
                           </div>
                         ) : (
@@ -681,9 +522,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                             <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-blue-500 bg-slate-50 font-bold" placeholder="URL de la evidencia..." />
                             <div className="flex justify-end gap-3">
                               <button onClick={() => setUploadType(null)} disabled={isSaving} className="px-4 py-2 text-slate-500 text-[10px] font-black hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Atrás</button>
-                              <button onClick={handleLinkSubmit} disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50">
-                                <Send size={16} className="mr-2" /> Registrar Carga
-                              </button>
+                              <button onClick={handleLinkSubmit} disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"><Send size={16} className="mr-2" /> Registrar Carga</button>
                             </div>
                           </div>
                         )}
