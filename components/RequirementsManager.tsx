@@ -41,7 +41,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
     if (activity) {
       setEditingActivity(activity);
       setFormData(activity);
-      setSelectedPeriodicity(Periodicity.MONTHLY); // Default/Reset
+      setSelectedPeriodicity(activity.periodicity || Periodicity.MONTHLY); 
     } else {
       setEditingActivity(null);
       setFormData({
@@ -114,26 +114,17 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
       setErrorMsg("Debe seleccionar al menos un Sistema de Gestión.");
       return;
     }
-
-    // Duplicate Check
-    if (!editingActivity) {
-      const isDuplicate = activities.some(
-        a => a.clause === formData.clause && 
-             a.subClause === formData.subClause &&
-             a.clauseTitle === formData.clauseTitle && 
-             a.responsibleArea === formData.responsibleArea
-      );
-      if (isDuplicate) {
-        setErrorMsg("Ya existe un requisito con esta Cláusula, Sub-numeral y Título para esta área.");
-        return;
-      }
-    }
     
-    const monthlyPlan = editingActivity 
-      ? editingActivity.monthlyPlan 
-      : generateMonthlyPlan(selectedPeriodicity);
-
-    const finalPlan = (!editingActivity) ? monthlyPlan : formData.monthlyPlan || monthlyPlan;
+    // Check if we need to regenerate the plan (if periodicity changed or new activity)
+    let finalPlan: MonthlyExecution[] = [];
+    
+    if (editingActivity && editingActivity.periodicity === selectedPeriodicity) {
+        // Keep existing plan (preserving evidences) if periodicity didn't change
+        finalPlan = editingActivity.monthlyPlan;
+    } else {
+        // Generate new plan structure
+        finalPlan = generateMonthlyPlan(selectedPeriodicity);
+    }
 
     const activityData: Activity = {
       id: editingActivity ? editingActivity.id : `ACT-${Date.now()}`,
@@ -149,7 +140,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
       compliance2024: formData.compliance2024 || false,
       compliance2025: formData.compliance2025 || false,
       monthlyPlan: finalPlan,
-      evidence: formData.evidence
+      // No global evidence field anymore
     };
 
     if (editingActivity) {

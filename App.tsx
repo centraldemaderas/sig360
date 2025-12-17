@@ -8,6 +8,7 @@ import { Login } from './components/Login';
 import { UserManagement } from './components/UserManagement';
 import { SystemSettings } from './components/SystemSettings';
 import { StandardManager } from './components/StandardManager';
+import { EvidenceDashboard } from './components/EvidenceDashboard';
 import { StandardType, Activity, User, StandardDefinition } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
@@ -164,7 +165,6 @@ function App() {
              <h2 className="text-2xl font-bold">Falta Base de Datos</h2>
              <p className="text-red-100 mt-1 text-sm">El sistema está configurado pero no encuentra la base de datos.</p>
           </div>
-          {/* ... (Same error UI as before) ... */}
            <div className="p-8 space-y-6">
              <p className="text-slate-600">Por favor, habilita Firestore en la consola de Firebase.</p>
              <button 
@@ -189,6 +189,14 @@ function App() {
     switch (activeView) {
       case 'dashboard':
         return <Dashboard />;
+      case 'evidence-dashboard':
+        return (
+          <EvidenceDashboard 
+            activities={activities}
+            currentUser={currentUser}
+            onUpdateActivity={handleUpdateActivity}
+          />
+        );
       case 'norms':
         return (
           <StandardManager 

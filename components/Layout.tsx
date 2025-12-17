@@ -14,7 +14,8 @@ import {
   Sliders,
   CloudLightning,
   HardDrive,
-  BookOpen
+  BookOpen,
+  AlertOctagon
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
@@ -46,13 +47,19 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'fsc', label: 'FSC', icon: TreePine },
   ];
 
-  // Config items only for Admins
-  const configItems = currentUser.role === UserRole.ADMIN ? [
+  // Config items
+  const adminItems = [
     { id: 'norms', label: 'Gestión de Normas', icon: BookOpen },
     { id: 'requirements', label: 'Requisitos y Matriz', icon: Settings },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'settings', label: 'Configuración Global', icon: Sliders },
-  ] : [];
+  ];
+
+  const commonTools = [
+     { id: 'evidence-dashboard', label: 'Hallazgos y Evidencias', icon: AlertOctagon },
+  ];
+
+  const configItems = currentUser.role === UserRole.ADMIN ? adminItems : [];
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -105,8 +112,8 @@ export const Layout: React.FC<LayoutProps> = ({
           </button>
         </div>
 
-        <nav className="flex-1 py-4 flex flex-col justify-between overflow-y-auto scrollbar-thin px-3">
-          <ul className="space-y-1">
+        <nav className="flex-1 py-4 flex flex-col overflow-y-auto scrollbar-thin px-3">
+          <ul className="space-y-1 mb-6">
             {navItems.map((item) => (
               <li key={item.id}>
                 <button
@@ -129,6 +136,34 @@ export const Layout: React.FC<LayoutProps> = ({
                 </button>
               </li>
             ))}
+          </ul>
+
+          <ul className="space-y-1 border-t border-slate-100 pt-4">
+             <li className="px-2 pb-2">
+                {isSidebarOpen && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-2">Gestión</span>}
+              </li>
+              {commonTools.map((item) => (
+                <li key={item.id}>
+                  <button
+                    onClick={() => setActiveView(item.id)}
+                    className={`w-full flex items-center px-3 py-3 rounded-xl transition-all relative group font-medium ${
+                      activeView === item.id 
+                        ? 'bg-amber-100 text-amber-900 shadow-sm' 
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <item.icon 
+                      size={22} 
+                      className={`min-w-[22px] transition-colors ${
+                        activeView === item.id ? 'text-amber-700' : 'text-slate-400 group-hover:text-amber-600'
+                      }`} 
+                    />
+                    {isSidebarOpen && (
+                      <span className="ml-3 text-sm truncate">{item.label}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
           </ul>
 
           {configItems.length > 0 && (
@@ -194,7 +229,7 @@ export const Layout: React.FC<LayoutProps> = ({
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 z-10 sticky top-0 shadow-sm">
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-              {navItems.find(n => n.id === activeView)?.label || configItems.find(n => n.id === activeView)?.label || 'Sistema de Gestión'}
+              {navItems.find(n => n.id === activeView)?.label || configItems.find(n => n.id === activeView)?.label || commonTools.find(n => n.id === activeView)?.label || 'Sistema de Gestión'}
             </h1>
           </div>
           <div className="flex items-center space-x-4">

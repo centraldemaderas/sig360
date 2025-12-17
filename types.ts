@@ -20,11 +20,14 @@ export enum Periodicity {
   ANNUAL = 'Anual'
 }
 
-export interface MonthlyExecution {
-  month: number; // 0-11
-  planned: boolean;
-  executed: boolean;
-  delayed: boolean;
+export type EvidenceStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface CommentLog {
+  id: string;
+  text: string;
+  author: string;
+  date: string;
+  status: EvidenceStatus;
 }
 
 export interface Evidence {
@@ -33,6 +36,19 @@ export interface Evidence {
   fileName: string;
   uploadedBy: string; // User Name
   uploadedAt: string; // ISO Date String
+  status: EvidenceStatus;
+  adminComment?: string; // Latest comment for quick access
+  rejectionDate?: string;
+  approvedBy?: string;
+  history: CommentLog[]; // Full traceability history
+}
+
+export interface MonthlyExecution {
+  month: number; // 0-11
+  planned: boolean;
+  executed: boolean;
+  delayed: boolean;
+  evidence?: Evidence; 
 }
 
 export interface Activity {
@@ -49,7 +65,6 @@ export interface Activity {
   compliance2024: boolean; 
   compliance2025: boolean; 
   monthlyPlan: MonthlyExecution[];
-  evidence?: Evidence; // Updated from string to Object
 }
 
 export interface StandardDefinition {
@@ -57,7 +72,7 @@ export interface StandardDefinition {
   type: StandardType;
   description: string;
   objective: string;
-  certifyingBody: string; // Ente certificador
+  certifyingBody: string; 
   comments: {
     id: string;
     text: string;

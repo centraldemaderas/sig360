@@ -32,13 +32,21 @@ class DataService {
         }
       );
     } else {
-      const saved = localStorage.getItem('app_activities');
-      if (saved) {
-        onUpdate(JSON.parse(saved));
-      } else {
-        onUpdate(MOCK_ACTIVITIES_GERENCIA);
-      }
-      return () => {};
+      // Local Mode: Listen to custom event for reactivity
+      const load = () => {
+        const saved = localStorage.getItem('app_activities');
+        if (saved) {
+          onUpdate(JSON.parse(saved));
+        } else {
+          onUpdate(MOCK_ACTIVITIES_GERENCIA);
+        }
+      };
+      
+      load(); // Initial load
+      
+      const listener = () => load();
+      window.addEventListener('local-data-changed', listener);
+      return () => window.removeEventListener('local-data-changed', listener);
     }
   }
 
@@ -58,13 +66,18 @@ class DataService {
         }
       );
     } else {
-      const saved = localStorage.getItem('app_users');
-      if (saved) {
-        onUpdate(JSON.parse(saved));
-      } else {
-        onUpdate(MOCK_USERS);
-      }
-      return () => {};
+      const load = () => {
+        const saved = localStorage.getItem('app_users');
+        if (saved) {
+          onUpdate(JSON.parse(saved));
+        } else {
+          onUpdate(MOCK_USERS);
+        }
+      };
+      load();
+      const listener = () => load();
+      window.addEventListener('local-data-changed', listener);
+      return () => window.removeEventListener('local-data-changed', listener);
     }
   }
 
@@ -95,9 +108,15 @@ class DataService {
         }
       });
     } else {
-      const saved = localStorage.getItem('company_logo');
-      onUpdate({ companyLogo: saved || null });
-      return () => {};
+      const load = () => {
+        const saved = localStorage.getItem('company_logo');
+        onUpdate({ companyLogo: saved || null });
+      };
+      load();
+      // We can reuse the same event or a specific one, reusing simple for now
+      const listener = () => load();
+      window.addEventListener('local-data-changed', listener);
+      return () => window.removeEventListener('local-data-changed', listener);
     }
   }
 
@@ -105,8 +124,14 @@ class DataService {
 
   async addActivity(activity: Activity) {
     if (USE_CLOUD_DB && db) {
-      const { id, ...data } = activity; 
-      await setDoc(doc(db, COLL_ACTIVITIES, activity.id), data);
+      try {
+        const { id, ...data } = activity; 
+        const sanitized = this.cleanData(data);
+        await setDoc(doc(db, COLL_ACTIVITIES, activity.id), sanitized);
+      } catch (error) {
+        console.error("Error adding activity:", error);
+        throw error;
+      }
     } else {
       const current = this.getLocalActivities();
       const updated = [...current, activity];
@@ -116,9 +141,15 @@ class DataService {
 
   async updateActivity(activity: Activity) {
     if (USE_CLOUD_DB && db) {
-      const { id, ...data } = activity;
-      const docRef = doc(db, COLL_ACTIVITIES, id);
-      await updateDoc(docRef, data);
+      try {
+        const { id, ...data } = activity;
+        const sanitized = this.cleanData(data);
+        const docRef = doc(db, COLL_ACTIVITIES, id);
+        await updateDoc(docRef, sanitized);
+      } catch (error) {
+        console.error("Error updating activity:", error);
+        throw error;
+      }
     } else {
       const current = this.getLocalActivities();
       const updated = current.map(a => a.id === activity.id ? activity : a);
@@ -140,7 +171,8 @@ class DataService {
   async addUser(user: User) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = user;
-      await setDoc(doc(db, COLL_USERS, user.id), data);
+      const sanitized = this.cleanData(data);
+      await setDoc(doc(db, COLL_USERS, user.id), sanitized);
     } else {
       const current = this.getLocalUsers();
       const updated = [...current, user];
@@ -151,8 +183,9 @@ class DataService {
   async updateUser(user: User) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = user;
+      const sanitized = this.cleanData(data);
       const docRef = doc(db, COLL_USERS, id);
-      await updateDoc(docRef, data);
+      await updateDoc(docRef, sanitized);
     } else {
       const current = this.getLocalUsers();
       const updated = current.map(u => u.id === user.id ? user : u);
@@ -174,23 +207,43 @@ class DataService {
   async updateStandard(std: StandardDefinition) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = std;
-      await setDoc(doc(db, COLL_STANDARDS, id), data);
+      const sanitized = this.cleanData(data);
+      await setDoc(doc(db, COLL_STANDARDS, id), sanitized);
     }
   }
 
   // --- SETTINGS ACTIONS ---
   async updateSettings(settings: AppSettings) {
     if (USE_CLOUD_DB && db) {
-      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), settings);
+      const sanitized = this.cleanData(settings);
+      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), sanitized);
     } else {
       if (settings.companyLogo) {
         localStorage.setItem('company_logo', settings.companyLogo);
       } else {
         localStorage.removeItem('company_logo');
       }
-      // Force reload for local
-      window.location.reload();
+      window.dispatchEvent(new Event('local-data-changed'));
     }
+  }
+
+  // --- HELPER: CLEAN DATA FOR FIRESTORE (Remove Undefined) ---
+  private cleanData(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.cleanData(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      const newObj: any = {};
+      Object.keys(obj).forEach(key => {
+        const value = obj[key];
+        if (value === undefined) {
+          newObj[key] = null; // Convert undefined to null for Firestore
+        } else {
+          newObj[key] = this.cleanData(value);
+        }
+      });
+      return newObj;
+    }
+    return obj;
   }
 
   // --- LOCAL STORAGE HELPERS (Internal) ---
@@ -224,13 +277,13 @@ class DataService {
     // Seed Activities
     for (const act of MOCK_ACTIVITIES_GERENCIA) {
        const { id, ...data } = act;
-       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), data));
+       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(data)));
     }
 
     // Seed Users
     for (const user of MOCK_USERS) {
        const { id, ...data } = user;
-       batchPromises.push(setDoc(doc(db, COLL_USERS, id), data));
+       batchPromises.push(setDoc(doc(db, COLL_USERS, id), this.cleanData(data)));
     }
 
     // Seed Default Standards Definitions
@@ -241,7 +294,7 @@ class DataService {
     ];
 
     for (const std of defaultStandards) {
-      batchPromises.push(setDoc(doc(db, COLL_STANDARDS, std.id), std));
+      batchPromises.push(setDoc(doc(db, COLL_STANDARDS, std.id), this.cleanData(std)));
     }
 
     await Promise.all(batchPromises);

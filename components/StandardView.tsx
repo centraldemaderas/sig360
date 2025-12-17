@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
-import { Activity, StandardType, Periodicity, User } from '../types';
-import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Activity, StandardType, Periodicity, User, UserRole, Evidence, CommentLog } from '../types';
+import { Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, Image as ImageIcon, ExternalLink, RefreshCw, ThumbsUp, ThumbsDown, MessageSquare, Clock, History, User as UserIcon } from 'lucide-react';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -22,154 +22,136 @@ export const StandardView: React.FC<StandardViewProps> = ({
   currentUser
 }) => {
   const [selectedArea, setSelectedArea] = useState('ALL');
-  const [viewingActivity, setViewingActivity] = useState<Activity | null>(null);
   
-  // Upload Modal State
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
+  const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
   const [uploadType, setUploadType] = useState<'file' | 'link' | null>(null);
   const [linkInput, setLinkInput] = useState('');
+  const [adminComment, setAdminComment] = useState('');
+  
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Filter activities based on the selected area AND the current standard
   const filteredActivities = activities.filter(a => {
     const matchesStandard = a.standards.includes(standard);
     const matchesArea = selectedArea === 'ALL' || a.responsibleArea === selectedArea;
     return matchesStandard && matchesArea;
   });
 
-  const openUploadModal = (activityId: string) => {
-    setActiveUploadId(activityId);
-    setUploadModalOpen(true);
+  const openModal = (activityId: string, monthIndex: number) => {
+    setActiveActivityId(activityId);
+    setActiveMonthIndex(monthIndex);
+    setModalOpen(true);
     setUploadType(null);
     setLinkInput('');
+    setAdminComment('');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !activeUploadId) return;
+    if (!file || !activeActivityId || activeMonthIndex === null) return;
 
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      const activityToUpdate = activities.find(a => a.id === activeUploadId);
-      if (!activityToUpdate) return;
-
-      const updatedActivity: Activity = {
-        ...activityToUpdate,
-        evidence: {
-          url: base64,
-          type: 'FILE',
-          fileName: file.name,
-          uploadedBy: currentUser.name,
-          uploadedAt: new Date().toLocaleDateString()
-        }
-      };
-
-      onUpdateActivity(updatedActivity);
-      setUploadModalOpen(false);
-      setActiveUploadId(null);
+      updateActivityEvidence(base64, 'FILE', file.name);
     };
     reader.readAsDataURL(file);
   };
 
   const handleLinkSubmit = () => {
-    if (!linkInput.trim() || !activeUploadId) return;
-    
-    const activityToUpdate = activities.find(a => a.id === activeUploadId);
-    if (!activityToUpdate) return;
-
-    const updatedActivity: Activity = {
-      ...activityToUpdate,
-      evidence: {
-        url: linkInput,
-        type: 'LINK',
-        fileName: 'Enlace Externo',
-        uploadedBy: currentUser.name,
-        uploadedAt: new Date().toLocaleDateString()
-      }
-    };
-    onUpdateActivity(updatedActivity);
-    setUploadModalOpen(false);
-    setActiveUploadId(null);
+    if (!linkInput.trim() || !activeActivityId || activeMonthIndex === null) return;
+    updateActivityEvidence(linkInput, 'LINK', 'Enlace OneDrive/Web');
   };
 
-  const handleDownloadEvidence = (activity: Activity) => {
-    if (activity.evidence) {
-      if (activity.evidence.type === 'LINK') {
-        window.open(activity.evidence.url, '_blank');
-      } else {
-        // Create a temporary link for Base64 download
-        const link = document.createElement("a");
-        link.href = activity.evidence.url;
-        link.download = activity.evidence.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+  const updateActivityEvidence = (url: string, type: 'FILE' | 'LINK', fileName: string) => {
+      const activityToUpdate = activities.find(a => a.id === activeActivityId);
+      if (!activityToUpdate || activeMonthIndex === null) return;
+
+      const newMonthlyPlan = activityToUpdate.monthlyPlan.map((item, index) => {
+        if (index !== activeMonthIndex) return item;
+        return {
+          ...item,
+          executed: true,
+          evidence: {
+            url,
+            type,
+            fileName,
+            uploadedBy: currentUser.name,
+            uploadedAt: new Date().toLocaleDateString(),
+            status: 'PENDING',
+            adminComment: null as any,
+            approvedBy: null as any,
+            rejectionDate: null as any,
+            history: (item.evidence?.history || [])
+          } as Evidence
+        };
+      });
+
+      onUpdateActivity({ ...activityToUpdate, monthlyPlan: newMonthlyPlan });
+      setModalOpen(false);
+  };
+
+  const handleAdminVerification = (status: 'APPROVED' | 'REJECTED') => {
+    if (!activeActivityId || activeMonthIndex === null) return;
+    
+    const activityToUpdate = activities.find(a => a.id === activeActivityId);
+    if (!activityToUpdate) return;
+    
+    const targetPlan = activityToUpdate.monthlyPlan[activeMonthIndex];
+    if (!targetPlan || !targetPlan.evidence) return;
+
+    const newCommentEntry: CommentLog = {
+      id: `log-${Date.now()}`,
+      text: adminComment || (status === 'APPROVED' ? 'Evidencia validada correctamente.' : 'Evidencia rechazada.'),
+      author: currentUser.name,
+      date: new Date().toLocaleString(),
+      status: status
+    };
+
+    const newMonthlyPlan = activityToUpdate.monthlyPlan.map((item, index) => {
+      if (index !== activeMonthIndex) return item;
+      
+      const updatedEvidence: Evidence = {
+        ...(item.evidence as Evidence),
+        status: status,
+        adminComment: newCommentEntry.text,
+        approvedBy: status === 'APPROVED' ? currentUser.name : null as any,
+        rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
+        history: [newCommentEntry, ...(item.evidence?.history || [])]
+      };
+
+      return {
+        ...item,
+        evidence: updatedEvidence
+      };
+    });
+
+    onUpdateActivity({ ...activityToUpdate, monthlyPlan: newMonthlyPlan });
+    setModalOpen(false);
+  };
+
+  const handleDownloadEvidence = (url: string, fileName: string, type: 'FILE' | 'LINK') => {
+    if (type === 'LINK') {
+      window.open(url, '_blank');
     } else {
-      openUploadModal(activity.id);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
-  // Helper to determine cell structure based on periodicity
   const renderPeriodicityCells = (activity: Activity) => {
     const plan = activity.monthlyPlan;
     const cells = [];
     let i = 0;
-
-    const isFutureYear = currentYear > 2025;
-    const hasEvidence = !!activity.evidence;
-
-    const getCellContent = (startIndex: number, endIndex: number) => {
-      // If there is global evidence attached to the activity, show Check everywhere for simplicity 
-      // OR implement logic to check if that specific month was executed.
-      // For this requirement, if evidence exists, we assume the task is done.
-      if (hasEvidence) {
-         return (
-          <div className="group relative w-full h-full flex items-center justify-center">
-             <button 
-              onClick={(e) => { e.stopPropagation(); handleDownloadEvidence(activity); }}
-              className="flex items-center justify-center w-full h-full hover:scale-110 transition-transform"
-            >
-               <Check size={14} className="mx-auto text-white" />
-            </button>
-            
-            {/* Tooltip on hover */}
-            <div className="absolute bottom-full mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg z-20 w-32 whitespace-normal leading-tight">
-               <strong>Subido por:</strong><br/>{activity.evidence?.uploadedBy}<br/>
-               <span className="opacity-75">{activity.evidence?.uploadedAt}</span>
-            </div>
-          </div>
-        );
-      }
-
-      // Check planning
-      let hasPlanned = false;
-      for (let k = startIndex; k <= endIndex; k++) {
-        if (plan[k]?.planned) hasPlanned = true;
-      }
-      
-      if (hasPlanned) return <span className="text-[10px] font-bold">P</span>;
-      return null;
-    };
-
-    const getCellClass = (startIndex: number, endIndex: number) => {
-      // Logic simplified: If evidence exists, it's green/blue. If not and planned, it's pending.
-      if (hasEvidence) return "bg-blue-600 text-white cursor-pointer hover:bg-blue-700";
-
-      let hasPlanned = false;
-      for (let k = startIndex; k <= endIndex; k++) {
-        if (plan[k]?.planned) hasPlanned = true;
-      }
-
-      if (hasPlanned) return "bg-blue-100 text-blue-800 border-2 border-blue-200";
-      return "bg-slate-50 opacity-50"; 
-    };
+    const isFutureYear = currentYear > new Date().getFullYear();
 
     while (i < 12) {
       let colSpan = 1;
-      // ... same logic for colspan
       switch (activity.periodicity) {
         case Periodicity.ANNUAL: colSpan = 12; break;
         case Periodicity.SEMIANNUAL: colSpan = 6; break;
@@ -179,14 +161,77 @@ export const StandardView: React.FC<StandardViewProps> = ({
       }
       if (i + colSpan > 12) colSpan = 12 - i;
 
+      let evidenceFound = null;
+      let evidenceIndex = -1;
+      let isPlanned = false;
+      let plannedIndex = -1;
+
+      for (let k = i; k < i + colSpan; k++) {
+        if (plan[k]?.evidence) {
+          evidenceFound = plan[k].evidence;
+          evidenceIndex = k;
+        }
+        if (plan[k]?.planned) {
+          isPlanned = true;
+          plannedIndex = k;
+        }
+      }
+      
+      let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i + colSpan - 1);
+      let cellBg = "bg-slate-50"; 
+      let cellContent = null;
+      let borderColor = "border-slate-200";
+
+      if (evidenceFound) {
+        if (evidenceFound.status === 'APPROVED') {
+          cellBg = "bg-green-100 border-green-300";
+        } else if (evidenceFound.status === 'REJECTED') {
+           cellBg = "bg-orange-100 border-orange-300";
+        } else {
+           cellBg = "bg-blue-100 border-blue-300";
+        }
+      } else if (isPlanned) {
+         if (isFutureYear) {
+            cellBg = "bg-slate-100 text-slate-400"; 
+            cellContent = <span className="text-[9px] font-bold">P</span>;
+         } else {
+            const currentRealMonth = new Date().getMonth();
+            const currentRealYear = new Date().getFullYear();
+            const isOverdue = currentYear < currentRealYear || (currentYear === currentRealYear && i <= currentRealMonth);
+            
+            if (isOverdue) {
+              cellBg = "bg-red-50 border-red-200"; 
+              cellContent = <span className="text-[10px] font-bold text-red-300">!</span>;
+            } else {
+              cellBg = "bg-blue-50 border-blue-100"; 
+              cellContent = <span className="text-[9px] font-bold text-blue-300">P</span>;
+            }
+         }
+      } else {
+        cellBg = "bg-slate-50 opacity-50"; 
+      }
+
       cells.push(
-        <td 
-          key={i} 
-          colSpan={colSpan} 
-          className={`border-r border-slate-200 p-1 text-center transition-colors ${getCellClass(i, i + colSpan - 1)}`}
-        >
-          <div className="flex items-center justify-center h-full w-full">
-            {getCellContent(i, i + colSpan - 1)}
+        <td key={i} colSpan={colSpan} className={`border-r p-1 text-center transition-all relative group ${cellBg} ${borderColor} border-b`}>
+          <div className="w-full h-full min-h-[40px] flex items-center justify-center relative">
+             {evidenceFound ? (
+               <div className="flex space-x-1">
+                 {evidenceFound.status === 'APPROVED' && <Check size={14} className="text-green-600" />}
+                 {evidenceFound.status === 'REJECTED' && <AlertCircle size={14} className="text-orange-600" />}
+                 {evidenceFound.status === 'PENDING' && <Clock size={14} className="text-blue-600" />}
+                 
+                 <div className="absolute inset-0 bg-white/90 hidden group-hover:flex items-center justify-center space-x-2 rounded shadow-sm z-10">
+                    <button onClick={() => handleDownloadEvidence(evidenceFound!.url, evidenceFound!.fileName, evidenceFound!.type)} className="p-1 hover:bg-slate-100 rounded text-slate-600" title="Ver Evidencia"><Eye size={14} /></button>
+                    <button onClick={() => openModal(activity.id, interactionIndex)} className="p-1 hover:bg-slate-100 rounded text-blue-600" title={currentUser.role === UserRole.ADMIN ? "Verificar" : "Actualizar"}>
+                      {currentUser.role === UserRole.ADMIN ? <Check size={14} /> : <RefreshCw size={14} />}
+                    </button>
+                 </div>
+               </div>
+             ) : (
+               <div onClick={() => isPlanned && openModal(activity.id, interactionIndex)} className={`w-full h-full flex items-center justify-center ${isPlanned ? 'cursor-pointer' : ''}`}>
+                 {cellContent}
+               </div>
+             )}
           </div>
         </td>
       );
@@ -195,51 +240,65 @@ export const StandardView: React.FC<StandardViewProps> = ({
     return cells;
   };
 
-  const getHistoricalCompliance = (activity: Activity) => {
-    // Si la columna es 2025 (currentYear), queremos ver el histórico (2024).
-    if (currentYear === 2025) return activity.compliance2024; 
-    // Si estamos en 2026, el historico es 2025.
-    if (currentYear === 2026) return activity.compliance2025;
-    return false;
+  const getYearStatus = (activity: Activity) => {
+    if (currentYear > new Date().getFullYear()) return { status: 'FUTURE', color: 'bg-slate-100 text-slate-400', label: 'Futuro' };
+    let totalPlanned = 0, totalExecuted = 0, totalApproved = 0, totalOverdue = 0;
+    const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
+    activity.monthlyPlan.forEach((m, idx) => {
+      if (m.planned) {
+        totalPlanned++;
+        if (m.evidence) {
+          totalExecuted++;
+          if (m.evidence.status === 'APPROVED') totalApproved++;
+        } else if (currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth)) {
+          totalOverdue++;
+        }
+      }
+    });
+    if (totalOverdue > 0) return { status: 'DELAYED', color: 'bg-red-100 text-red-700 border-red-200', label: `${totalOverdue} Pend` };
+    if (totalPlanned === 0) return { status: 'NONE', color: 'bg-slate-50 text-slate-400', label: '-' };
+    if (totalExecuted === totalPlanned) {
+      if (totalApproved === totalPlanned) return { status: 'COMPLIANT', color: 'bg-green-100 text-green-700 border-green-200', label: 'Listo' };
+      return { status: 'REVIEW', color: 'bg-blue-100 text-blue-700 border-blue-200', label: 'Rev' };
+    }
+    return { status: 'PROGRESS', color: 'bg-blue-50 text-blue-600 border-blue-100', label: 'Proceso' };
   };
+
+  const getProgressStats = (activity: Activity) => {
+     const executed = activity.monthlyPlan.filter(m => m.evidence).length;
+     const planned = activity.monthlyPlan.filter(m => m.planned).length;
+     return { executed, planned };
+  };
+
+  const activeEvidence = activeActivityId && activeMonthIndex !== null 
+    ? activities.find(a => a.id === activeActivityId)?.monthlyPlan[activeMonthIndex]?.evidence 
+    : null;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-8rem)]">
-      {/* Filters Toolbar */}
-      <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-4">
+      <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-3 text-xs">
+          <div className="flex items-center"><div className="w-3 h-3 bg-green-100 border border-green-300 rounded mr-1"></div><span className="text-slate-600">Aprobado</span></div>
+          <div className="flex items-center"><div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded mr-1"></div><span className="text-slate-600">Cargado (Rev)</span></div>
+          <div className="flex items-center"><div className="w-3 h-3 bg-orange-100 border border-orange-300 rounded mr-1"></div><span className="text-slate-600">Rechazado</span></div>
+          <div className="flex items-center"><div className="w-3 h-3 bg-red-50 border border-red-200 rounded mr-1"></div><span className="text-slate-600">Vencido</span></div>
+        </div>
         <div className="flex items-center space-x-4">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
-             <button 
-               onClick={() => setCurrentYear(2025)}
-               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${currentYear === 2025 ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}
-             >
-               2025
-             </button>
-             <button 
-               onClick={() => setCurrentYear(2026)}
-               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${currentYear === 2026 ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}
-             >
-               2026
-             </button>
+             <button onClick={() => setCurrentYear(2025)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${currentYear === 2025 ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>2025</button>
+             <button onClick={() => setCurrentYear(2026)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${currentYear === 2026 ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>2026</button>
           </div>
           <div className="h-6 w-px bg-slate-300"></div>
           <div className="bg-white p-2 border border-slate-300 rounded-lg flex items-center space-x-2 shadow-sm">
             <Filter size={18} className="text-slate-500" />
-            <select 
-              value={selectedArea} 
-              onChange={(e) => setSelectedArea(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm font-medium text-slate-700 min-w-[150px]"
-            >
+            <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="bg-transparent border-none outline-none text-sm font-medium text-slate-700 min-w-[150px]">
               <option value="ALL">TODAS LAS ÁREAS</option>
-              {AREAS.map(area => (
-                <option key={area} value={area}>{area}</option>
-              ))}
+              {AREAS.map(area => <option key={area} value={area}>{area}</option>)}
             </select>
           </div>
         </div>
       </div>
 
-      {/* Grid */}
       <div className="overflow-auto flex-1 scrollbar-thin">
         <table className="w-full text-xs text-left border-collapse">
           <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0 z-10 shadow-sm">
@@ -247,21 +306,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
               <th className="p-3 border-r border-slate-200 min-w-[80px] text-center">Cláusula</th>
               <th className="p-3 border-r border-slate-200 min-w-[200px]">Requisito (Norma)</th>
               <th className="p-3 border-r border-slate-200 min-w-[200px] bg-slate-50 border-b-2 border-slate-300">Tarea Específica / Criterio</th>
-              <th className="p-3 border-r border-slate-200 w-[60px] text-center">Detalle</th>
-              <th className="p-3 border-r border-slate-200 min-w-[60px] text-center bg-slate-200">
-                 {/* Explicit Header Change requested by user */}
-                 {currentYear === 2025 ? '2025' : (currentYear - 1)}
-              </th>
-              {MONTHS.map(m => (
-                <th key={m} className="p-2 border-r border-slate-200 text-center min-w-[40px]">{m}</th>
-              ))}
-              <th className="p-3 min-w-[80px] text-center sticky right-0 bg-slate-100 shadow-l">Evidencia</th>
+              <th className="p-3 border-r border-slate-200 min-w-[60px] text-center bg-slate-200">{currentYear}</th>
+              {MONTHS.map(m => <th key={m} className="p-2 border-r border-slate-200 text-center min-w-[40px]">{m}</th>)}
+              <th className="p-3 min-w-[80px] text-center sticky right-0 bg-slate-100 shadow-l">Avance</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {filteredActivities.map((activity) => {
-                const historicalCompliance = getHistoricalCompliance(activity);
-
+                const yearStatus = getYearStatus(activity);
+                const progress = getProgressStats(activity);
                 return (
                 <tr key={activity.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3 border-r border-slate-200 text-center font-medium bg-white">
@@ -270,52 +323,20 @@ export const StandardView: React.FC<StandardViewProps> = ({
                   </td>
                   <td className="p-3 border-r border-slate-200 bg-white">
                     <div className="font-semibold text-slate-800 line-clamp-2" title={activity.clauseTitle}>{activity.clauseTitle}</div>
-                    {selectedArea === 'ALL' && (
-                       <span className="inline-block mt-1 px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">
-                        {activity.responsibleArea}
-                      </span>
-                    )}
+                    {selectedArea === 'ALL' && <span className="inline-block mt-1 px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">{activity.responsibleArea}</span>}
                   </td>
-                  <td className="p-3 border-r border-slate-200 bg-white">
-                    <div className="text-slate-600 text-[11px] leading-snug line-clamp-3">
-                      {activity.relatedQuestions || <span className="text-slate-400 italic">Sin tarea específica definida</span>}
-                    </div>
-                  </td>
-                  <td className="p-3 border-r border-slate-200 text-center bg-white">
-                    <button onClick={() => setViewingActivity(activity)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-full">
-                      <Eye size={16} />
-                    </button>
-                  </td>
-                  <td className={`p-3 border-r border-slate-200 text-center ${historicalCompliance ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <div className={`mx-auto w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
-                      historicalCompliance 
-                        ? 'bg-green-100 text-green-700 border border-green-200' 
-                        : 'bg-red-100 text-red-700 border border-red-200'
-                    }`}>
-                      {historicalCompliance ? '1' : '0'}
-                    </div>
-                  </td>
-
+                  <td className="p-3 border-r border-slate-200 bg-white"><div className="text-slate-600 text-[11px] leading-snug line-clamp-3">{activity.relatedQuestions || <span className="text-slate-400 italic">Sin tarea específica definida</span>}</div></td>
+                  <td className={`p-3 border-r border-slate-200 text-center ${yearStatus.color.split(' ')[0]}`}><div className={`mx-auto px-2 py-1 rounded text-[10px] font-bold border ${yearStatus.color}`}>{yearStatus.label}</div></td>
                   {renderPeriodicityCells(activity)}
-
                   <td className="p-3 text-center sticky right-0 bg-white shadow-l border-l border-slate-200">
-                    {activity.evidence ? (
-                      <button 
-                        onClick={() => handleDownloadEvidence(activity)} 
-                        className="flex flex-col items-center justify-center text-blue-600 hover:text-blue-800 mx-auto group"
-                        title={`Subido por: ${activity.evidence.uploadedBy}`}
-                      >
-                         {activity.evidence.type === 'LINK' ? <LinkIcon size={18} /> : <FileText size={18} />}
-                         <span className="text-[9px] mt-1 max-w-[60px] truncate">{activity.evidence.fileName}</span>
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => openUploadModal(activity.id)}
-                        className="flex items-center justify-center p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full mx-auto"
-                      >
-                        <Upload size={14} />
-                      </button>
-                    )}
+                     {progress.planned > 0 ? (
+                       <div className="flex flex-col items-center">
+                         <div className="text-[10px] font-bold text-slate-600 mb-1">{progress.executed}/{progress.planned}</div>
+                         <div className="w-12 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                           <div className={`h-full ${yearStatus.status === 'DELAYED' ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${(progress.executed / progress.planned) * 100}%` }}></div>
+                         </div>
+                       </div>
+                    ) : <span className="text-slate-300">-</span>}
                   </td>
                 </tr>
               )})}
@@ -323,71 +344,104 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </table>
       </div>
 
-      {/* UPLOAD MODAL */}
-      {uploadModalOpen && (
+      {modalOpen && activeActivityId && activeMonthIndex !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                <Paperclip size={20} className="mr-2 text-slate-500" />
-                Cargar Evidencia
-              </h3>
-              <button onClick={() => setUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                   {currentUser.role === UserRole.ADMIN ? 'Gestión y Verificación de Evidencia' : 'Cargar Evidencia'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">{MONTHS[activeMonthIndex]} - {activities.find(a => a.id === activeActivityId)?.clauseTitle}</p>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
             
-            <div className="p-6">
-              {!uploadType ? (
-                 <div className="space-y-3">
-                   <button 
-                    onClick={() => setUploadType('link')}
-                    className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group"
-                  >
-                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-lg mr-4 group-hover:bg-blue-600 group-hover:text-white">
-                      <Cloud size={24} />
-                    </div>
-                    <div className="text-left">
-                      <span className="block font-bold text-slate-800">OneDrive / SharePoint</span>
-                      <span className="text-xs text-slate-500">Pegar enlace del archivo</span>
-                    </div>
-                  </button>
-
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group"
-                  >
-                    <div className="bg-slate-100 text-slate-600 p-2.5 rounded-lg mr-4 group-hover:bg-slate-800 group-hover:text-white">
-                      <ImageIcon size={24} />
-                    </div>
-                    <div className="text-left">
-                      <span className="block font-bold text-slate-800">Foto o Archivo Local</span>
-                      <span className="text-xs text-slate-500">Subir imagen o PDF (Max 1MB)</span>
-                    </div>
-                  </button>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    onChange={handleFileUpload} 
-                    accept="image/*,application/pdf"
-                  />
-                 </div>
-              ) : (
-                <div className="space-y-4">
-                   <p className="text-sm text-slate-600">Pegue el enlace del documento de OneDrive/SharePoint:</p>
-                   <input 
-                    type="text" 
-                    value={linkInput}
-                    onChange={e => setLinkInput(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-                    placeholder="https://sharepoint.com/..."
-                   />
-                   <div className="flex justify-end gap-2">
-                     <button onClick={() => setUploadType(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded">Atrás</button>
-                     <button onClick={handleLinkSubmit} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar Enlace</button>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+              {activeEvidence ? (
+                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
+                   <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-bold text-blue-800">Archivo Actual:</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeEvidence.status === 'APPROVED' ? 'bg-green-200 text-green-800' : activeEvidence.status === 'REJECTED' ? 'bg-orange-200 text-orange-800' : 'bg-blue-200 text-blue-800'}`}>
+                         {activeEvidence.status}
+                      </span>
+                   </div>
+                   <div className="flex items-center space-x-2 mb-3">
+                      <FileText className="text-blue-600" size={20} />
+                      <span className="text-sm text-slate-700 truncate font-medium">{activeEvidence.fileName}</span>
+                   </div>
+                   <div className="flex space-x-3">
+                      <button onClick={() => handleDownloadEvidence(activeEvidence.url, activeEvidence.fileName, activeEvidence.type)} className="flex-1 bg-white border border-blue-200 text-blue-700 py-2 rounded text-sm hover:bg-blue-100 font-medium flex items-center justify-center"><ExternalLink size={14} className="mr-2" /> Ver Documento</button>
                    </div>
                 </div>
+              ) : (
+                <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                   <p className="text-slate-400 text-sm">No hay evidencia cargada para este periodo.</p>
+                </div>
+              )}
+
+              {/* TRACEABILITY HISTORY */}
+              {activeEvidence && activeEvidence.history && activeEvidence.history.length > 0 && (
+                <div className="space-y-3">
+                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center">
+                     <History size={14} className="mr-2" /> Historial de Gestión y Comentarios
+                   </h4>
+                   <div className="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                     {activeEvidence.history.map((log) => (
+                       <div key={log.id} className="relative pl-8">
+                         <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 ${log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : 'bg-orange-100 border-orange-500 text-orange-600'}`}>
+                            {log.status === 'APPROVED' ? <Check size={12} /> : <ThumbsDown size={12} />}
+                         </div>
+                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+                           <div className="flex justify-between items-center mb-1">
+                             <div className="flex items-center space-x-2">
+                               <span className="text-xs font-bold text-slate-700 flex items-center"><UserIcon size={12} className="mr-1" /> {log.author}</span>
+                               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${log.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{log.status === 'APPROVED' ? 'Aprobado' : 'Rechazado'}</span>
+                             </div>
+                             <span className="text-[10px] text-slate-400">{log.date}</span>
+                           </div>
+                           <p className="text-xs text-slate-600 leading-relaxed">{log.text}</p>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                </div>
+              )}
+
+              {/* ADMIN ACTION: VERIFY */}
+              {currentUser.role === UserRole.ADMIN && activeEvidence && (
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                   <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-2">Añadir Comentario de Gestión</label>
+                     <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[100px]" placeholder="Escriba los hallazgos, recomendaciones o el motivo del rechazo..." />
+                   </div>
+                   <div className="flex space-x-3">
+                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-orange-100 text-orange-700 py-3 rounded-xl font-bold hover:bg-orange-200 flex items-center justify-center border border-orange-200 transition-colors shadow-sm"><ThumbsDown size={18} className="mr-2" /> Rechazar (Naranja)</button>
+                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 flex items-center justify-center shadow-md transition-colors"><ThumbsUp size={18} className="mr-2" /> Aprobar (Verde)</button>
+                   </div>
+                </div>
+              )}
+
+              {/* USER ACTION: UPLOAD/UPDATE */}
+              {(!activeEvidence || currentUser.role !== UserRole.ADMIN) && (
+                 <div className="space-y-3 pt-2">
+                   {!uploadType ? (
+                     <>
+                      <button onClick={() => setUploadType('link')} className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group shadow-sm"><Cloud size={20} className="text-blue-500 mr-3" /><span className="text-sm font-bold text-slate-700">OneDrive / SharePoint / Web Link</span></button>
+                      <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group shadow-sm"><ImageIcon size={20} className="text-slate-500 mr-3" /><span className="text-sm font-bold text-slate-700">Archivo Local / Foto</span></button>
+                      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
+                     </>
+                   ) : (
+                     <div className="space-y-3">
+                       <p className="text-sm text-slate-600 font-bold">Pegar enlace del documento:</p>
+                       <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://..." />
+                       <div className="flex justify-end gap-2">
+                         <button onClick={() => setUploadType(null)} className="px-4 py-2 text-slate-500 text-sm font-bold">Atrás</button>
+                         <button onClick={handleLinkSubmit} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 font-bold shadow-md">Guardar Evidencia</button>
+                       </div>
+                     </div>
+                   )}
+                 </div>
               )}
             </div>
           </div>
