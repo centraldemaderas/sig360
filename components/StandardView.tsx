@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { MONTHS, AREAS } from '../constants';
-import { Activity, StandardType, Periodicity, User, UserRole, Evidence, CommentLog } from '../types';
+import { Activity, StandardType, Periodicity, User, UserRole, Evidence, CommentLog, MonthlyExecution } from '../types';
 import { 
   Check, Upload, FileText, AlertCircle, Filter, Eye, X, Cloud, 
   HardDrive, Paperclip, Calendar, Download, Link as LinkIcon, 
@@ -9,6 +9,7 @@ import {
   MessageSquare, Clock, History, User as UserIcon, Send, ShieldCheck, 
   CheckCircle, Info, BookOpen, Target, Briefcase
 } from 'lucide-react';
+import { dataService } from '../services/dataService';
 
 interface StandardViewProps {
   standard: StandardType;
@@ -81,11 +82,34 @@ export const StandardView: React.FC<StandardViewProps> = ({
     updateActivityEvidence(linkInput, 'LINK', 'Enlace OneDrive/Web');
   };
 
-  const updateActivityEvidence = (url: string, type: 'FILE' | 'LINK', fileName: string) => {
+  const getPlanForYear = (activity: Activity, year: number): MonthlyExecution[] => {
+    if (activity.plans && activity.plans[year]) {
+      return activity.plans[year];
+    }
+    
+    if (year === 2025 && activity.monthlyPlan) {
+      return activity.monthlyPlan;
+    }
+
+    return Array.from({ length: 12 }, (_, i) => {
+      let isPlanned = false;
+      switch (activity.periodicity) {
+        case Periodicity.MONTHLY: isPlanned = true; break;
+        case Periodicity.BIMONTHLY: isPlanned = i % 2 === 0; break;
+        case Periodicity.QUARTERLY: isPlanned = (i + 1) % 3 === 0; break;
+        case Periodicity.SEMIANNUAL: isPlanned = i === 5 || i === 11; break;
+        case Periodicity.ANNUAL: isPlanned = i === 11; break;
+      }
+      return { month: i, planned: isPlanned, executed: false, delayed: false };
+    });
+  };
+
+  const updateActivityEvidence = async (url: string, type: 'FILE' | 'LINK', fileName: string) => {
       const activityToUpdate = activities.find(a => a.id === activeActivityId);
       if (!activityToUpdate || activeMonthIndex === null) return;
 
-      const existingItem = activityToUpdate.monthlyPlan[activeMonthIndex];
+      const currentYearPlan = getPlanForYear(activityToUpdate, currentYear);
+      const existingItem = currentYearPlan[activeMonthIndex];
       const existingHistory = existingItem.evidence?.history || [];
 
       const updateLog: CommentLog = {
@@ -96,7 +120,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         status: 'PENDING'
       };
 
-      const newMonthlyPlan = activityToUpdate.monthlyPlan.map((item, index) => {
+      const newYearPlan = currentYearPlan.map((item, index) => {
         if (index !== activeMonthIndex) return item;
         return {
           ...item,
@@ -106,7 +130,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
             type,
             fileName,
             uploadedBy: currentUser.name,
-            uploadedAt: new Date().toLocaleDateString(),
+            uploadedAt: new Date().toLocaleString(),
             status: 'PENDING',
             adminComment: updateLog.text,
             history: [updateLog, ...existingHistory]
@@ -114,17 +138,44 @@ export const StandardView: React.FC<StandardViewProps> = ({
         };
       });
 
-      onUpdateActivity({ ...activityToUpdate, monthlyPlan: newMonthlyPlan });
+      const updatedActivity: Activity = {
+        ...activityToUpdate,
+        plans: {
+          ...(activityToUpdate.plans || {}),
+          [currentYear]: newYearPlan
+        }
+      };
+
+      onUpdateActivity(updatedActivity);
+      
+      const allUsers = await dataService.getUsersOnce();
+      // Targeted Notification: Admins and Leaders associated with THIS specific area
+      const targetUsers = allUsers.filter(u => 
+        u.role === UserRole.ADMIN || (u.assignedArea === activityToUpdate.responsibleArea)
+      );
+
+      for (const target of targetUsers) {
+        await dataService.createNotification({
+          userId: target.id,
+          title: 'Nueva Evidencia Subida',
+          message: `${currentUser.name} ha cargado evidencia para "${activityToUpdate.clauseTitle}" del área ${activityToUpdate.responsibleArea} (${MONTHS[activeMonthIndex]} ${currentYear})`,
+          date: new Date().toLocaleString(),
+          read: false,
+          type: 'NEW_UPLOAD'
+        });
+      }
+
       setModalOpen(false);
   };
 
-  const handleAdminVerification = (status: 'APPROVED' | 'REJECTED') => {
+  const handleAdminVerification = async (status: 'APPROVED' | 'REJECTED') => {
     if (!activeActivityId || activeMonthIndex === null) return;
     
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
     
-    const targetPlan = activityToUpdate.monthlyPlan[activeMonthIndex];
+    const currentYearPlan = getPlanForYear(activityToUpdate, currentYear);
+    const targetPlan = currentYearPlan[activeMonthIndex];
     if (!targetPlan || !targetPlan.evidence) return;
 
     const newCommentEntry: CommentLog = {
@@ -135,7 +186,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       status: status
     };
 
-    const newMonthlyPlan = activityToUpdate.monthlyPlan.map((item, index) => {
+    const newYearPlan = currentYearPlan.map((item, index) => {
       if (index !== activeMonthIndex) return item;
       
       const updatedEvidence: Evidence = {
@@ -147,13 +198,36 @@ export const StandardView: React.FC<StandardViewProps> = ({
         history: [newCommentEntry, ...(item.evidence?.history || [])]
       };
 
-      return {
-        ...item,
-        evidence: updatedEvidence
-      };
+      return { ...item, evidence: updatedEvidence };
     });
 
-    onUpdateActivity({ ...activityToUpdate, monthlyPlan: newMonthlyPlan });
+    const updatedActivity: Activity = {
+      ...activityToUpdate,
+      plans: {
+        ...(activityToUpdate.plans || {}),
+        [currentYear]: newYearPlan
+      }
+    };
+
+    onUpdateActivity(updatedActivity);
+
+    const allUsers = await dataService.getUsersOnce();
+    // Targeted Notification: Notify ALL users linked to the area of the activity
+    const areaUsers = allUsers.filter(u => u.assignedArea === activityToUpdate.responsibleArea);
+    
+    for (const targetUser of areaUsers) {
+      await dataService.createNotification({
+        userId: targetUser.id,
+        title: status === 'APPROVED' ? '✅ Evidencia Aprobada' : '❌ Evidencia Rechazada',
+        message: status === 'APPROVED' 
+          ? `Tu evidencia para "${activityToUpdate.clauseTitle}" de ${activityToUpdate.responsibleArea} ha sido validada.`
+          : `Tu evidencia para "${activityToUpdate.clauseTitle}" fue rechazada por el auditor: ${adminComment}`,
+        date: new Date().toLocaleString(),
+        read: false,
+        type: status === 'APPROVED' ? 'APPROVAL' : 'REJECTION'
+      });
+    }
+
     setModalOpen(false);
   };
 
@@ -171,7 +245,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const renderPeriodicityCells = (activity: Activity) => {
-    const plan = activity.monthlyPlan;
+    const plan = getPlanForYear(activity, currentYear);
     const cells = [];
     let i = 0;
     const isFutureYear = currentYear > new Date().getFullYear();
@@ -218,7 +292,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         }
       } else if (isPlanned) {
          if (isFutureYear) {
-            cellBg = "bg-slate-100 text-slate-400"; 
+            cellBg = "bg-slate-200 text-slate-400"; 
             cellContent = <span className="text-[9px] font-bold">P</span>;
          } else {
             const currentRealMonth = new Date().getMonth();
@@ -229,8 +303,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
               cellBg = "bg-red-50 border-red-200"; 
               cellContent = <span className="text-[10px] font-bold text-red-300">!</span>;
             } else {
-              cellBg = "bg-blue-50 border-blue-100"; 
-              cellContent = <span className="text-[9px] font-bold text-blue-300">P</span>;
+              cellBg = "bg-slate-200 border-slate-300"; 
+              cellContent = <span className="text-[9px] font-bold text-slate-400">P</span>;
             }
          }
       } else {
@@ -267,10 +341,11 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const getYearStatus = (activity: Activity) => {
+    const plan = getPlanForYear(activity, currentYear);
     if (currentYear > new Date().getFullYear()) return { status: 'FUTURE', color: 'bg-slate-100 text-slate-400', label: 'Futuro' };
     let totalPlanned = 0, totalExecuted = 0, totalApproved = 0, totalOverdue = 0;
     const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
-    activity.monthlyPlan.forEach((m, idx) => {
+    plan.forEach((m, idx) => {
       if (m.planned) {
         totalPlanned++;
         if (m.evidence) {
@@ -291,25 +366,27 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const getProgressStats = (activity: Activity) => {
-     const executed = activity.monthlyPlan.filter(m => m.evidence).length;
-     const planned = activity.monthlyPlan.filter(m => m.planned).length;
+     const plan = getPlanForYear(activity, currentYear);
+     const executed = plan.filter(m => m.evidence).length;
+     const planned = plan.filter(m => m.planned).length;
      return { executed, planned };
   };
 
   const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
-  
-  const activeEvidence = activeActivity && activeMonthIndex !== null 
-    ? activeActivity.monthlyPlan[activeMonthIndex]?.evidence 
+  const activePlan = activeActivity && activeMonthIndex !== null 
+    ? getPlanForYear(activeActivity, currentYear)[activeMonthIndex]
     : null;
+  const activeEvidence = activePlan?.evidence || null;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-8rem)]">
-      <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
         <div className="flex flex-wrap gap-3 text-xs">
           <div className="flex items-center"><div className="w-3 h-3 bg-green-100 border border-green-300 rounded mr-1"></div><span className="text-slate-600">Aprobado</span></div>
           <div className="flex items-center"><div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded mr-1"></div><span className="text-slate-600">Cargado (Rev)</span></div>
           <div className="flex items-center"><div className="w-3 h-3 bg-orange-100 border border-orange-300 rounded mr-1"></div><span className="text-slate-600">Rechazado</span></div>
           <div className="flex items-center"><div className="w-3 h-3 bg-red-50 border border-red-200 rounded mr-1"></div><span className="text-slate-600">Vencido</span></div>
+          <div className="flex items-center"><div className="w-3 h-3 bg-slate-200 border border-slate-300 rounded mr-1"></div><span className="text-slate-600">Planificado</span></div>
         </div>
         <div className="flex items-center space-x-4">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
@@ -381,141 +458,160 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </table>
       </div>
 
-      {/* INFO MODAL: Requisite Details */}
+      {/* INFO MODAL: COMPACT AND TOP-POSITIONED */}
       {infoModalOpen && activeActivity && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
-             <div className="p-6 bg-slate-800 text-white flex justify-between items-center">
+        <div className="fixed inset-0 bg-slate-900/80 flex items-start justify-center z-[9999] p-4 pt-12 backdrop-blur-md overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col animate-in fade-in slide-in-from-top-8 duration-500 border border-slate-200">
+             <div className="p-6 bg-slate-900 text-white flex justify-between items-center shrink-0">
                 <div className="flex items-center">
-                   <div className="p-2 bg-blue-500 rounded-lg mr-4">
-                      <BookOpen size={20} className="text-white" />
+                   <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl mr-5 shadow-xl shadow-blue-500/30">
+                      <BookOpen size={24} className="text-white" />
                    </div>
                    <div>
-                      <h3 className="text-lg font-bold leading-tight">{activeActivity.clauseTitle}</h3>
-                      <p className="text-blue-300 text-[10px] font-black uppercase tracking-widest mt-0.5">Cláusula {activeActivity.clause} {activeActivity.subClause}</p>
+                      <h3 className="text-lg font-black leading-tight tracking-tight">{activeActivity.clauseTitle}</h3>
+                      <div className="flex gap-2 mt-1.5">
+                        <span className="text-blue-100 text-[9px] font-black uppercase tracking-[0.1em] bg-blue-900/60 px-2 py-0.5 rounded-full border border-blue-700/50">Norma: {activeActivity.clause}</span>
+                        <span className="text-blue-100 text-[9px] font-black uppercase tracking-[0.1em] bg-blue-900/60 px-2 py-0.5 rounded-full border border-blue-700/50">ID: {activeActivity.subClause}</span>
+                      </div>
                    </div>
                 </div>
-                <button onClick={() => setInfoModalOpen(false)} className="text-slate-300 hover:text-white transition-colors">
-                  <X size={24} />
+                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-all text-slate-400 hover:text-white group">
+                  <X size={24} className="group-active:scale-90 transition-transform" />
                 </button>
              </div>
              
-             <div className="p-8 space-y-6 overflow-y-auto scrollbar-thin max-h-[70vh]">
-                <div className="space-y-2">
-                   <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-1">
-                      <ShieldCheck size={14} className="mr-2" /> Descripción Oficial (Norma)
+             <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin bg-white flex-1">
+                {/* Description - FULL CONTENT */}
+                <div className="space-y-3">
+                   <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">
+                      <ShieldCheck size={14} className="mr-2 text-slate-300" /> Descripción Oficial Integra
                    </div>
-                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm text-slate-600 leading-relaxed italic">
+                   <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[13px] text-slate-700 leading-relaxed italic whitespace-pre-wrap font-medium shadow-inner">
                       "{activeActivity.description}"
                    </div>
                 </div>
 
-                <div className="space-y-2">
-                   <div className="flex items-center text-blue-600 font-bold text-[10px] uppercase tracking-wider mb-1">
-                      <Target size={14} className="mr-2" /> Contextualización Central de Maderas
+                {/* Context - FULL CONTENT */}
+                <div className="space-y-3">
+                   <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-[0.2em]">
+                      <Target size={14} className="mr-2" /> Explicación Detallada
                    </div>
-                   <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-sm text-slate-700 leading-relaxed font-medium">
+                   <div className="bg-blue-50/40 p-5 rounded-2xl border border-blue-100/50 text-[13px] text-slate-800 leading-relaxed font-semibold whitespace-pre-wrap shadow-inner">
                       {activeActivity.contextualization}
                    </div>
                 </div>
 
+                {/* Responsible & Periodicity Grid */}
                 <div className="grid grid-cols-2 gap-4">
-                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
-                         <Briefcase size={14} className="mr-2" /> Responsable
+                   <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center">
+                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0">
+                        <Briefcase size={18} className="text-slate-400" />
                       </div>
-                      <p className="text-sm font-bold text-slate-800">{activeActivity.responsibleArea}</p>
+                      <div className="min-w-0">
+                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Responsable</div>
+                        <p className="text-xs font-black text-slate-900 truncate">{activeActivity.responsibleArea}</p>
+                      </div>
                    </div>
-                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
-                         <Calendar size={14} className="mr-2" /> Periodicidad
+                   <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center">
+                      <div className="p-2 bg-slate-50 rounded-lg mr-3 shrink-0">
+                        <Calendar size={18} className="text-slate-400" />
                       </div>
-                      <p className="text-sm font-bold text-slate-800">{activeActivity.periodicity}</p>
+                      <div className="min-w-0">
+                        <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Periodicidad</div>
+                        <p className="text-xs font-black text-slate-900 truncate">{activeActivity.periodicity}</p>
+                      </div>
                    </div>
                 </div>
 
-                <div className="space-y-2">
-                   <div className="flex items-center text-amber-600 font-bold text-[10px] uppercase tracking-wider mb-1">
+                {/* Specific Task - FULL CONTENT */}
+                <div className="space-y-3">
+                   <div className="flex items-center text-amber-600 font-black text-[9px] uppercase tracking-[0.2em]">
                       <CheckCircle size={14} className="mr-2" /> Tarea Específica / Criterio
                    </div>
-                   <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 text-sm text-amber-900 leading-relaxed">
+                   <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-100/50 text-[13px] text-amber-950 leading-relaxed whitespace-pre-wrap font-black shadow-inner">
                       {activeActivity.relatedQuestions}
                    </div>
                 </div>
              </div>
 
-             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+             <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
                 <button 
                   onClick={() => setInfoModalOpen(false)}
-                  className="px-6 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all shadow-md"
+                  className="px-8 py-3 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 transition-all shadow-xl active:scale-95 border border-slate-700"
                 >
-                   Cerrar Consulta
+                   Finalizar Consulta
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* VERIFICATION MODAL: Upload / Approve */}
+      {/* VERIFICATION MODAL: COMPACT AND TOP-POSITIONED */}
       {modalOpen && activeActivity && activeMonthIndex !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
-            <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+        <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-[9000] p-4 pt-12 backdrop-blur-sm overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300 border border-slate-200">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
               <div>
-                <h3 className="text-lg font-bold text-slate-800 flex items-center">
-                   {currentUser.role === UserRole.ADMIN ? 'Gestión y Verificación de Evidencia' : 'Cargar / Actualizar Evidencia'}
+                <h3 className="text-xl font-black text-slate-900 flex items-center tracking-tight">
+                   {currentUser.role === UserRole.ADMIN ? 'Verificación Auditora' : 'Evidencias del Sistema'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">{MONTHS[activeMonthIndex]} - {activeActivity.clauseTitle}</p>
+                <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{MONTHS[activeMonthIndex]} {currentYear} • {activeActivity.clauseTitle}</p>
               </div>
-              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+              <button onClick={() => setModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
               {activeEvidence ? (
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-                   <div className="flex justify-between items-start mb-2">
-                      <span className="text-xs font-bold text-blue-800">Archivo Actual:</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeEvidence.status === 'APPROVED' ? 'bg-green-200 text-green-800' : activeEvidence.status === 'REJECTED' ? 'bg-orange-200 text-orange-800' : 'bg-blue-200 text-blue-800'}`}>
-                         {activeEvidence.status === 'PENDING' ? 'Por Verificar' : activeEvidence.status === 'APPROVED' ? 'Aprobado' : 'Rechazado'}
+                <div className="bg-blue-50/30 border border-blue-100 p-5 rounded-2xl">
+                   <div className="flex justify-between items-start mb-4">
+                      <span className="text-[10px] font-black text-blue-900 uppercase tracking-[0.2em] bg-blue-100/50 px-2 py-1 rounded-lg border border-blue-200/50">Soporte</span>
+                      <span className={`text-[9px] font-black px-3 py-1 rounded-full shadow-sm border ${
+                        activeEvidence.status === 'APPROVED' ? 'bg-green-100 text-green-800 border-green-200' : 
+                        activeEvidence.status === 'REJECTED' ? 'bg-orange-100 text-orange-800 border-orange-200' : 
+                        'bg-blue-100 text-blue-800 border-blue-200'
+                      }`}>
+                         {activeEvidence.status === 'PENDING' ? 'Bajo Revisión' : activeEvidence.status === 'APPROVED' ? 'Certificado' : 'No Conforme'}
                       </span>
                    </div>
-                   <div className="flex items-center space-x-2 mb-3">
-                      <FileText className="text-blue-600" size={20} />
-                      <span className="text-sm text-slate-700 truncate font-medium">{activeEvidence.fileName}</span>
+                   <div className="flex items-center space-x-4 mb-6">
+                      <div className="p-3 bg-white rounded-xl shadow-sm border border-blue-100/50 shrink-0">
+                        <FileText className="text-blue-600" size={24} />
+                      </div>
+                      <span className="text-sm text-slate-900 font-black truncate pr-4">{activeEvidence.fileName}</span>
                    </div>
-                   <div className="flex space-x-3">
-                      <button onClick={() => handleDownloadEvidence(activeEvidence.url, activeEvidence.fileName, activeEvidence.type)} className="flex-1 bg-white border border-blue-200 text-blue-700 py-2 rounded text-sm hover:bg-blue-100 font-medium flex items-center justify-center"><ExternalLink size={14} className="mr-2" /> Ver Documento</button>
+                   <div className="flex">
+                      <button onClick={() => handleDownloadEvidence(activeEvidence.url, activeEvidence.fileName, activeEvidence.type)} className="flex-1 bg-white border border-blue-100 text-blue-700 py-3 rounded-xl text-xs font-black hover:bg-blue-50 flex items-center justify-center shadow-sm transition-all"><ExternalLink size={16} className="mr-2" /> Abrir Documento</button>
                    </div>
                 </div>
               ) : (
-                <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
-                   <p className="text-slate-400 text-sm">No hay evidencia cargada para este periodo.</p>
+                <div className="text-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center">
+                   <Upload size={40} className="text-slate-300 mb-3" />
+                   <p className="text-slate-500 text-sm font-black text-center px-4">No se ha registrado evidencia para este periodo</p>
                 </div>
               )}
 
-              {/* TRACEABILITY HISTORY */}
+              {/* BITACORA */}
               {activeEvidence && activeEvidence.history && activeEvidence.history.length > 0 && (
-                <div className="space-y-3">
-                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center">
-                     <History size={14} className="mr-2" /> Historial de Gestión (Bitácora)
+                <div className="space-y-4">
+                   <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
+                     <History size={14} className="mr-2" /> Trazabilidad de Gestión
                    </h4>
-                   <div className="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                   <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                      {activeEvidence.history.map((log) => (
                        <div key={log.id} className="relative pl-8">
-                         <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-sm ${log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : log.status === 'REJECTED' ? 'bg-orange-100 border-orange-500 text-orange-600' : 'bg-blue-100 border-blue-500 text-blue-600'}`}>
+                         <div className={`absolute left-0 top-1 w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-sm z-10 ${
+                           log.status === 'APPROVED' ? 'bg-green-100 border-green-500 text-green-600' : 
+                           log.status === 'REJECTED' ? 'bg-orange-100 border-orange-500 text-orange-600' : 
+                           'bg-blue-100 border-blue-500 text-blue-600'
+                         }`}>
                             {log.status === 'APPROVED' ? <Check size={12} /> : log.status === 'REJECTED' ? <ThumbsDown size={12} /> : <Upload size={12} />}
                          </div>
-                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:border-slate-300 transition-colors">
+                         <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
                            <div className="flex justify-between items-center mb-1">
-                             <div className="flex items-center space-x-2">
-                               <span className="text-xs font-bold text-slate-700 flex items-center"><UserIcon size={12} className="mr-1" /> {log.author}</span>
-                               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${log.status === 'APPROVED' ? 'bg-green-100 text-green-700' : log.status === 'REJECTED' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                 {log.status === 'APPROVED' ? 'Aprobado' : log.status === 'REJECTED' ? 'Rechazado' : 'Actualización'}
-                               </span>
-                             </div>
-                             <span className="text-[10px] text-slate-400">{log.date}</span>
+                             <span className="text-xs font-black text-slate-900">{log.author}</span>
+                             <span className="text-[9px] text-slate-400 font-bold">{log.date}</span>
                            </div>
-                           <p className="text-xs text-slate-600 leading-relaxed font-medium">{log.text}</p>
+                           <p className="text-[11px] text-slate-600 leading-relaxed font-semibold">{log.text}</p>
                          </div>
                        </div>
                      ))}
@@ -523,77 +619,58 @@ export const StandardView: React.FC<StandardViewProps> = ({
                 </div>
               )}
 
-              {/* ADMIN ACTION: VERIFY */}
+              {/* ADMIN ACTION - COMPACTED BUTTONS */}
               {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status !== 'APPROVED' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
-                   <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
-                      <p className="text-xs text-amber-800 font-bold flex items-center"><ShieldCheck size={14} className="mr-2" /> Panel de Validación Administrativa</p>
+                   <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                      <p className="text-[11px] text-amber-950 font-black flex items-center uppercase tracking-widest"><ShieldCheck size={16} className="mr-2" /> Decisión Auditora</p>
                    </div>
-                   <div>
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Comentario de Evaluación</label>
-                     <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[100px]" placeholder="Escriba los hallazgos de la auditoría documental o el motivo del rechazo para que el líder lo corrija..." />
-                   </div>
+                   <textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:border-blue-500 outline-none min-h-[100px] bg-slate-50 transition-all font-bold placeholder:text-slate-300" placeholder="Escriba aquí los hallazgos de la revisión..." />
                    <div className="flex space-x-3">
-                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-orange-100 text-orange-700 py-3 rounded-xl font-bold hover:bg-orange-200 flex items-center justify-center border border-orange-200 transition-colors shadow-sm"><ThumbsDown size={18} className="mr-2" /> Rechazar Evidencia</button>
-                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 flex items-center justify-center shadow-md transition-colors"><ThumbsUp size={18} className="mr-2" /> Aprobar y Validar</button>
+                      <button onClick={() => handleAdminVerification('REJECTED')} className="flex-1 bg-white border-2 border-orange-200 text-orange-700 py-2.5 rounded-2xl font-black text-xs hover:bg-orange-50 flex items-center justify-center shadow-md transition-all active:scale-95"><ThumbsDown size={18} className="mr-2.5" /> Rechazar</button>
+                      <button onClick={() => handleAdminVerification('APPROVED')} className="flex-1 bg-green-600 text-white py-2.5 rounded-2xl font-black text-xs hover:bg-green-700 flex items-center justify-center shadow-xl transition-all active:scale-95"><ThumbsUp size={18} className="mr-2.5" /> Verificar</button>
                    </div>
                 </div>
               )}
 
-              {/* USER ACTION: UPLOAD/UPDATE */}
-              {(currentUser.role !== UserRole.ADMIN || (activeEvidence && activeEvidence.status === 'APPROVED')) && (
-                 <div className="space-y-4 pt-2 border-t border-slate-100">
-                    {activeEvidence && (
-                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                        <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center"><RefreshCw size={16} className="mr-2 text-blue-600" /> ¿Desea actualizar la evidencia?</h4>
-                        <div className="mb-4">
-                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nota de actualización / Corrección</label>
-                           <textarea 
-                             value={updateNote}
-                             onChange={e => setUpdateNote(e.target.value)}
-                             placeholder="Explique qué cambios realizó o responda a las observaciones del auditor..."
-                             className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
-                           />
-                        </div>
-                      </div>
-                    )}
+              {/* LEADER UPLOAD / RE-UPLOAD */}
+              {(currentUser.role === UserRole.LEADER || !activeEvidence || activeEvidence?.status === 'REJECTED') && (
+                 <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                        <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center">
+                          <RefreshCw size={14} className="mr-2 text-blue-600" /> 
+                          {activeEvidence ? 'Corregir Evidencia' : 'Gestionar Carga'}
+                        </h4>
+                        <textarea 
+                          value={updateNote}
+                          onChange={e => setUpdateNote(e.target.value)}
+                          placeholder="Descripción del documento..."
+                          className="w-full border border-slate-200 rounded-xl p-4 text-sm mb-4 outline-none focus:border-blue-500 bg-white min-h-[100px] transition-all font-bold placeholder:text-slate-300"
+                        />
 
-                   {!uploadType ? (
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <button onClick={() => setUploadType('link')} className="flex items-center p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group shadow-sm bg-white">
-                          <Cloud size={20} className="text-blue-500 mr-3" />
-                          <span className="text-sm font-bold text-slate-700">Actualizar por Link (OneDrive)</span>
-                        </button>
-                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center p-4 border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all group shadow-sm bg-white">
-                          <ImageIcon size={20} className="text-slate-500 mr-3" />
-                          <span className="text-sm font-bold text-slate-700">Subir Nuevo Archivo Local</span>
-                        </button>
-                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
-                     </div>
-                   ) : (
-                     <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                       <p className="text-sm text-slate-600 font-bold">Pegar nuevo enlace de documento:</p>
-                       <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://..." />
-                       <div className="flex justify-end gap-2">
-                         <button onClick={() => setUploadType(null)} className="px-4 py-2 text-slate-500 text-sm font-bold">Atrás</button>
-                         <button onClick={handleLinkSubmit} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 font-bold shadow-md flex items-center">
-                           <Send size={16} className="mr-2" /> Enviar para Revisión
-                         </button>
-                       </div>
-                     </div>
-                   )}
+                        {!uploadType ? (
+                          <div className="grid grid-cols-2 gap-4">
+                              <button onClick={() => setUploadType('link')} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-blue-200 hover:bg-blue-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95">
+                                <Cloud size={20} className="text-blue-500 mr-2" /> Enlace
+                              </button>
+                              <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center p-4 border border-slate-200 rounded-xl hover:border-slate-300 hover:bg-slate-50 bg-white font-black text-[10px] text-slate-700 transition-all shadow-sm active:scale-95">
+                                <ImageIcon size={20} className="text-slate-500 mr-2" /> Archivo
+                              </button>
+                              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
+                          </div>
+                        ) : (
+                          <div className="space-y-4 bg-white p-5 rounded-xl border border-slate-100 shadow-xl animate-in fade-in slide-in-from-top-4">
+                            <input type="text" value={linkInput} onChange={e => setLinkInput(e.target.value)} className="w-full border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-blue-500 bg-slate-50 font-bold" placeholder="URL de la evidencia..." />
+                            <div className="flex justify-end gap-3">
+                              <button onClick={() => setUploadType(null)} className="px-4 py-2 text-slate-500 text-[10px] font-black hover:bg-slate-100 rounded-lg transition-colors">Atrás</button>
+                              <button onClick={handleLinkSubmit} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95">
+                                <Send size={16} className="mr-2" /> Registrar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                    </div>
                  </div>
-              )}
-              
-              {/* ADMIN VIEW ONLY FOR APPROVED */}
-              {currentUser.role === UserRole.ADMIN && activeEvidence && activeEvidence.status === 'APPROVED' && (
-                <div className="bg-green-50 p-4 rounded-xl border border-green-200 flex items-center text-green-800">
-                   <CheckCircle className="mr-3" />
-                   <div className="text-sm">
-                      <p className="font-bold">Esta evidencia ya fue validada.</p>
-                      <p className="opacity-80">No se requieren acciones adicionales.</p>
-                   </div>
-                </div>
               )}
             </div>
           </div>

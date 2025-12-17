@@ -1,6 +1,8 @@
+
 import React, { useState } from 'react';
-import { User, UserRole } from '../types';
-import { Plus, Trash2, User as UserIcon, Shield, Briefcase, Edit, Save, X } from 'lucide-react';
+import { User, UserRole, NotificationSettings } from '../types';
+import { AREAS } from '../constants';
+import { Plus, Trash2, User as UserIcon, Shield, Briefcase, Edit, Save, X, Bell, Mail, ToggleLeft, ToggleRight, MapPin } from 'lucide-react';
 
 interface UserManagementProps {
   users: User[];
@@ -11,17 +13,26 @@ interface UserManagementProps {
 
 export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser, onUpdateUser, onDeleteUser }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  const defaultNotifs: NotificationSettings = {
+    notifyOnRejection: true,
+    notifyOnApproval: true,
+    notifyOnNewUpload: true,
+    emailEnabled: true
+  };
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     role: UserRole.LEADER,
-    password: ''
+    assignedArea: AREAS[0],
+    password: '',
+    notifications: defaultNotifs
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Sanitize Data before saving
     const sanitizedData = {
       ...formData,
       email: formData.email.trim().toLowerCase(),
@@ -29,23 +40,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
     };
     
     if (editingId) {
-      // Update existing user
       onUpdateUser({
         id: editingId,
         ...sanitizedData
       });
-      // Reset logic
       setEditingId(null);
     } else {
-      // Create new user
       onAddUser({
         id: `u-${Date.now()}`,
         ...sanitizedData
       });
     }
     
-    // Clear form
-    setFormData({ name: '', email: '', role: UserRole.LEADER, password: '' });
+    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: AREAS[0], password: '', notifications: defaultNotifs });
   };
 
   const handleEdit = (user: User) => {
@@ -54,114 +61,122 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
       name: user.name,
       email: user.email,
       role: user.role,
-      password: user.password || '' // Load current password or empty
+      assignedArea: user.assignedArea || AREAS[0],
+      password: user.password || '',
+      notifications: user.notifications || defaultNotifs
     });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setFormData({ name: '', email: '', role: UserRole.LEADER, password: '' });
+    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: AREAS[0], password: '', notifications: defaultNotifs });
+  };
+
+  const toggleNotif = (key: keyof NotificationSettings) => {
+    setFormData({
+      ...formData,
+      notifications: {
+        ...formData.notifications,
+        [key]: !formData.notifications[key]
+      }
+    });
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Gestión de Usuarios</h2>
-        <p className="text-slate-500">Administre el acceso del personal a la plataforma.</p>
+        <h2 className="text-2xl font-bold text-slate-800">Perfil y Gestión de Usuarios</h2>
+        <p className="text-slate-500">Administre el acceso del personal y vincúlelos a sus procesos correspondientes.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* User Form */}
         <div className="lg:col-span-1">
           <div className={`p-6 rounded-xl shadow-sm border transition-colors ${editingId ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className={`text-lg font-bold ${editingId ? 'text-blue-800' : 'text-slate-800'}`}>
-                {editingId ? 'Editar Usuario' : 'Nuevo Usuario'}
+                {editingId ? 'Editar Perfil / Usuario' : 'Nuevo Usuario'}
               </h3>
               {editingId && (
-                <button 
-                  onClick={handleCancelEdit}
-                  className="text-slate-400 hover:text-slate-600"
-                  title="Cancelar edición"
-                >
-                  <X size={20} />
-                </button>
+                <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
               )}
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre Completo</label>
-                <input 
-                  required
-                  type="text" 
-                  value={formData.name}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre Completo</label>
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
-                <input 
-                  required
-                  type="email" 
-                  value={formData.email}
-                  onChange={e => setFormData({...formData, email: e.target.value})}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                <select 
-                  value={formData.role}
-                  onChange={e => setFormData({...formData, role: e.target.value as UserRole})}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value={UserRole.LEADER}>Líder de Proceso (Solo Lectura)</option>
-                  <option value={UserRole.ADMIN}>Administrador (Control Total)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
-                <input 
-                  required
-                  type="text" 
-                  value={formData.password}
-                  onChange={e => setFormData({...formData, password: e.target.value})}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder={editingId ? "Dejar igual o cambiar" : "Asignar contraseña"}
-                />
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Correo Electrónico</label>
+                <input required type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               
-              <div className="flex gap-2">
-                {editingId && (
-                  <button 
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 font-medium py-2 rounded-lg transition-colors"
-                  >
-                    Cancelar
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Rol</label>
+                  <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as UserRole})} className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value={UserRole.LEADER}>Líder</option>
+                    <option value={UserRole.ADMIN}>Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Área / Proceso</label>
+                  <select value={formData.assignedArea} onChange={e => setFormData({...formData, assignedArea: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                    {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Contraseña</label>
+                <input required type="text" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+
+              <div className="pt-4 border-t border-slate-200">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center mb-4 uppercase tracking-wider">
+                  <Bell size={14} className="mr-2 text-blue-600" /> Preferencias de Notificación
+                </h4>
+                <div className="space-y-3">
+                  <button type="button" onClick={() => toggleNotif('notifyOnRejection')} className="flex items-center justify-between w-full p-2 hover:bg-black/5 rounded transition-colors group">
+                    <span className="text-xs text-slate-600 font-medium">Rechazo de Evidencia</span>
+                    {formData.notifications.notifyOnRejection ? <ToggleRight className="text-blue-600" /> : <ToggleLeft className="text-slate-300" />}
                   </button>
-                )}
-                <button 
-                  type="submit"
-                  className={`flex-1 ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-800 hover:bg-slate-900'} text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center`}
-                >
+                  <button type="button" onClick={() => toggleNotif('notifyOnApproval')} className="flex items-center justify-between w-full p-2 hover:bg-black/5 rounded transition-colors group">
+                    <span className="text-xs text-slate-600 font-medium">Aprobación de Evidencia</span>
+                    {formData.notifications.notifyOnApproval ? <ToggleRight className="text-blue-600" /> : <ToggleLeft className="text-slate-300" />}
+                  </button>
+                  {formData.role === UserRole.ADMIN && (
+                    <button type="button" onClick={() => toggleNotif('notifyOnNewUpload')} className="flex items-center justify-between w-full p-2 hover:bg-black/5 rounded transition-colors group">
+                      <span className="text-xs text-slate-600 font-medium">Nuevas Cargas (Admin)</span>
+                      {formData.notifications.notifyOnNewUpload ? <ToggleRight className="text-blue-600" /> : <ToggleLeft className="text-slate-300" />}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => toggleNotif('emailEnabled')} className="flex items-center justify-between w-full p-2 mt-2 bg-slate-100 rounded-lg group">
+                    <span className="text-xs text-slate-700 font-bold flex items-center">
+                      <Mail size={12} className="mr-2" /> Alertar por Correo
+                    </span>
+                    {formData.notifications.emailEnabled ? <ToggleRight className="text-green-600" /> : <ToggleLeft className="text-slate-400" />}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <button type="submit" className={`flex-1 ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-800 hover:bg-slate-900'} text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center shadow-lg`}>
                   {editingId ? <Save size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />}
-                  {editingId ? 'Actualizar' : 'Crear Usuario'}
+                  {editingId ? 'Actualizar' : 'Crear'}
                 </button>
               </div>
             </form>
           </div>
         </div>
 
-        {/* User List */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-100 text-slate-600 font-semibold uppercase text-xs">
+              <thead className="bg-slate-100 text-slate-600 font-semibold uppercase text-xs tracking-wider">
                 <tr>
                   <th className="p-4">Usuario</th>
+                  <th className="p-4">Área</th>
                   <th className="p-4">Rol</th>
                   <th className="p-4 text-center">Acciones</th>
                 </tr>
@@ -175,37 +190,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
                           <UserIcon size={16} />
                         </div>
                         <div>
-                          <div className="font-medium text-slate-900">{user.name}</div>
+                          <div className="font-bold text-slate-900">{user.name}</div>
                           <div className="text-xs text-slate-500">{user.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        user.role === UserRole.ADMIN 
-                          ? 'bg-purple-100 text-purple-800' 
-                          : 'bg-green-100 text-green-800'
+                      <div className="flex items-center text-slate-600 font-bold text-xs uppercase">
+                        <MapPin size={12} className="mr-1.5 text-slate-400" />
+                        {user.assignedArea || 'Global'}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
                       }`}>
-                        {user.role === UserRole.ADMIN ? <Shield size={12} className="mr-1" /> : <Briefcase size={12} className="mr-1" />}
                         {user.role}
                       </span>
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center space-x-2">
-                        <button 
-                          onClick={() => handleEdit(user)}
-                          className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded-full transition-colors"
-                          title="Editar usuario"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button 
-                          onClick={() => onDeleteUser(user.id)}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors"
-                          title="Eliminar usuario"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded-full transition-colors"><Edit size={18} /></button>
+                        <button onClick={() => onDeleteUser(user.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors"><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>

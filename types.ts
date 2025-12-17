@@ -30,25 +30,51 @@ export interface CommentLog {
   status: EvidenceStatus;
 }
 
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  date: string;
+  read: boolean;
+  type: 'REJECTION' | 'APPROVAL' | 'NEW_UPLOAD' | 'SYSTEM';
+}
+
+export interface NotificationSettings {
+  notifyOnRejection: boolean;
+  notifyOnApproval: boolean;
+  notifyOnNewUpload: boolean;
+  emailEnabled: boolean;
+}
+
 export interface Evidence {
-  url: string; // Base64 string or HTTP Link
+  url: string; 
   type: 'FILE' | 'LINK';
   fileName: string;
-  uploadedBy: string; // User Name
-  uploadedAt: string; // ISO Date String
+  uploadedBy: string; 
+  uploadedAt: string; 
   status: EvidenceStatus;
-  adminComment?: string; // Latest comment for quick access
+  adminComment?: string;
   rejectionDate?: string;
   approvedBy?: string;
-  history: CommentLog[]; // Full traceability history
+  history: CommentLog[];
 }
 
 export interface MonthlyExecution {
-  month: number; // 0-11
+  month: number; 
   planned: boolean;
   executed: boolean;
   delayed: boolean;
   evidence?: Evidence; 
+}
+
+export interface AreaStats {
+  id: string;
+  name: string;
+  totalActivities: number;
+  completedActivities: number;
+  compliancePercentage: number;
+  previousCompliance: number;
 }
 
 export interface Activity {
@@ -59,17 +85,18 @@ export interface Activity {
   description: string; 
   contextualization: string; 
   relatedQuestions: string;
-  standards: StandardType[]; 
+  standards: (StandardType | string)[]; 
   responsibleArea: string;
   periodicity: Periodicity; 
   compliance2024: boolean; 
   compliance2025: boolean; 
-  monthlyPlan: MonthlyExecution[];
+  plans?: { [year: number]: MonthlyExecution[] };
+  monthlyPlan?: MonthlyExecution[];
 }
 
 export interface StandardDefinition {
   id: string;
-  type: StandardType;
+  type: string; 
   description: string;
   objective: string;
   certifyingBody: string; 
@@ -82,22 +109,7 @@ export interface StandardDefinition {
 }
 
 export interface AppSettings {
-  companyLogo: string | null; // Base64
-}
-
-export interface AreaStats {
-  id: string;
-  name: string;
-  totalActivities: number;
-  completedActivities: number;
-  compliancePercentage: number;
-  previousCompliance: number; 
-}
-
-export interface GlobalStats {
-  overallCompliance: number;
-  targetCompliance: number;
-  deterioration: number; 
+  companyLogo: string | null; 
 }
 
 export enum UserRole {
@@ -110,5 +122,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  password?: string; 
+  assignedArea?: string; // New field to link users to processes
+  password?: string;
+  notifications?: NotificationSettings;
 }
