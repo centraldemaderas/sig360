@@ -1,3 +1,4 @@
+
 # Guía de Auditoría y Construcción de Prompt
 
 Como experto auditor de sistemas integrados (ISO 9001, SG-SST, FSC), he analizado la documentación suministrada (Excel). Para llevar esta aplicación a un nivel de producción completo, estas son las **Preguntas Clave** que definen el alcance (Prompt Engineering):
@@ -19,4 +20,9 @@ Como experto auditor de sistemas integrados (ISO 9001, SG-SST, FSC), he analizad
 *   ¿Cada área (ej. Ventas) solo puede ver y editar sus propias actividades, o es un sistema transparente para toda la gerencia?
 
 ---
-*Nota: La aplicación actual ha sido construida asumiendo las mejores prácticas para estas preguntas (Flujo simple, transparencia total, cálculo binario).*
+
+## 🛡️ Protección del Desarrollo (Stability First)
+Para asegurar que la IA mantenga el sistema estable:
+1.  **Surgical Changes**: Los prompts de actualización deben ser específicos (ej: "Ajusta solo el color del botón X" en lugar de "Rediseña la página").
+2.  **Schema Locking**: No modificar `types.ts` a menos que sea estrictamente necesario para la nueva funcionalidad.
+3.  **Data Safety**: Siempre verificar que los métodos de `dataService.ts` manejen el fallback a `localStorage` para evitar pérdida de datos en entornos sin internet.

@@ -1,17 +1,17 @@
 
 import React, { useState } from 'react';
-import { User, UserRole, NotificationSettings } from '../types';
-import { AREAS } from '../constants';
+import { User, UserRole, NotificationSettings, Area } from '../types';
 import { Plus, Trash2, User as UserIcon, Shield, Briefcase, Edit, Save, X, Bell, Mail, ToggleLeft, ToggleRight, MapPin } from 'lucide-react';
 
 interface UserManagementProps {
   users: User[];
+  areas: Area[];
   onAddUser: (user: User) => void;
   onUpdateUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
 }
 
-export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser, onUpdateUser, onDeleteUser }) => {
+export const UserManagement: React.FC<UserManagementProps> = ({ users, areas, onAddUser, onUpdateUser, onDeleteUser }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const defaultNotifs: NotificationSettings = {
@@ -25,7 +25,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
     name: '',
     email: '',
     role: UserRole.LEADER,
-    assignedArea: AREAS[0],
+    assignedArea: areas.length > 0 ? areas[0].name : '',
     password: '',
     notifications: defaultNotifs
   });
@@ -52,7 +52,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
       });
     }
     
-    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: AREAS[0], password: '', notifications: defaultNotifs });
+    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: areas.length > 0 ? areas[0].name : '', password: '', notifications: defaultNotifs });
   };
 
   const handleEdit = (user: User) => {
@@ -61,7 +61,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
       name: user.name,
       email: user.email,
       role: user.role,
-      assignedArea: user.assignedArea || AREAS[0],
+      assignedArea: user.assignedArea || (areas.length > 0 ? areas[0].name : ''),
       password: user.password || '',
       notifications: user.notifications || defaultNotifs
     });
@@ -69,7 +69,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: AREAS[0], password: '', notifications: defaultNotifs });
+    setFormData({ name: '', email: '', role: UserRole.LEADER, assignedArea: areas.length > 0 ? areas[0].name : '', password: '', notifications: defaultNotifs });
   };
 
   const toggleNotif = (key: keyof NotificationSettings) => {
@@ -122,7 +122,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Área / Proceso</label>
                   <select value={formData.assignedArea} onChange={e => setFormData({...formData, assignedArea: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
-                    {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+                    {areas.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
                   </select>
                 </div>
               </div>

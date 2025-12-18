@@ -3,6 +3,7 @@ import { Activity, AreaStats, StandardType, User, UserRole, Periodicity } from '
 
 export const AREAS = [
   'Gerencia',
+  'Comercial',
   'HSEQ',
   'Inventarios',
   'Producción',

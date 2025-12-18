@@ -78,6 +78,12 @@ export interface AreaStats {
   previousCompliance: number;
 }
 
+export interface Area {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface Plant {
   id: string;
   name: string;

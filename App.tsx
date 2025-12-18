@@ -10,7 +10,8 @@ import { SystemSettings } from './components/SystemSettings';
 import { StandardManager } from './components/StandardManager';
 import { EvidenceDashboard } from './components/EvidenceDashboard';
 import { PlantManager } from './components/PlantManager';
-import { StandardType, Activity, User, StandardDefinition, Plant } from './types';
+import { AreaManager } from './components/AreaManager';
+import { Activity, User, StandardDefinition, Plant, Area } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
 import { Database } from 'lucide-react';
@@ -22,6 +23,7 @@ function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [standards, setStandards] = useState<StandardDefinition[]>([]);
   const [plants, setPlants] = useState<Plant[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +47,7 @@ function App() {
     const unsubscribeUsers = dataService.subscribeToUsers(data => { setUsers(data); setUsersLoaded(true); });
     const unsubscribeStandards = dataService.subscribeToStandards(data => setStandards(data));
     const unsubscribePlants = dataService.subscribeToPlants(data => setPlants(data));
+    const unsubscribeAreas = dataService.subscribeToAreas(data => setAreas(data));
     const unsubscribeSettings = dataService.subscribeToSettings(data => setCompanyLogo(data?.companyLogo || null));
 
     return () => {
@@ -53,6 +56,7 @@ function App() {
       unsubscribeUsers();
       unsubscribeStandards();
       unsubscribePlants();
+      unsubscribeAreas();
       unsubscribeSettings();
     };
   }, []);
@@ -70,6 +74,9 @@ function App() {
   const handleAddPlant = async (p: Plant) => await dataService.addPlant(p);
   const handleUpdatePlant = async (p: Plant) => await dataService.updatePlant(p);
   const handleDeletePlant = async (id: string) => { if (window.confirm("¿Desea eliminar esta planta?")) await dataService.deletePlant(id); };
+  const handleAddArea = async (a: Area) => await dataService.addArea(a);
+  const handleUpdateArea = async (a: Area) => await dataService.updateArea(a);
+  const handleDeleteArea = async (id: string) => { await dataService.deleteArea(id); };
 
   if (isLoading) return <div className="flex h-screen items-center justify-center space-y-4 flex-col"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div><p>Cargando...</p></div>;
 
@@ -80,15 +87,16 @@ function App() {
   const renderContent = () => {
     if (activeView.startsWith('std-')) {
       const stdType = activeView.replace('std-', '');
-      return <StandardView standard={stdType} activities={activities} onUpdateActivity={handleUpdateActivity} currentYear={currentYear} setCurrentYear={setCurrentYear} currentUser={currentUser} />;
+      return <StandardView standard={stdType} activities={activities} areas={areas} onUpdateActivity={handleUpdateActivity} currentYear={currentYear} setCurrentYear={setCurrentYear} currentUser={currentUser} />;
     }
     switch (activeView) {
       case 'dashboard': return <Dashboard />;
       case 'evidence-dashboard': return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handleUpdateActivity} />;
       case 'norms': return <StandardManager standards={standards} onUpdateStandard={handleUpdateStandard} currentUser={currentUser} />;
-      case 'requirements': return <RequirementsManager activities={activities} onAdd={handleAddActivity} onUpdate={handleUpdateActivity} onDelete={handleDeleteActivity} standardsList={standards} />;
+      case 'requirements': return <RequirementsManager activities={activities} onAdd={handleAddActivity} onUpdate={handleUpdateActivity} onDelete={handleDeleteActivity} standardsList={standards} currentUser={currentUser} areas={areas} />;
       case 'plants': return <PlantManager plants={plants} onAdd={handleAddPlant} onUpdate={handleUpdatePlant} onDelete={handleDeletePlant} />;
-      case 'users': return <UserManagement users={users} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} />;
+      case 'areas': return <AreaManager areas={areas} users={users} onAdd={handleAddArea} onUpdate={handleUpdateArea} onDelete={handleDeleteArea} />;
+      case 'users': return <UserManagement users={users} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} areas={areas} />;
       case 'settings': return <SystemSettings currentLogo={companyLogo} onLogoChange={handleLogoChange} />;
       default: return <Dashboard />;
     }

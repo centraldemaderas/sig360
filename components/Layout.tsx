@@ -27,7 +27,8 @@ import {
   ChevronUp,
   Shield,
   Truck,
-  Factory
+  Factory,
+  Layers
 } from 'lucide-react';
 import { User, UserRole, Notification, StandardDefinition } from '../types';
 import { dataService } from '../services/dataService';
@@ -82,9 +83,14 @@ export const Layout: React.FC<LayoutProps> = ({
     return Briefcase;
   };
 
+  // Filtrar normas duplicadas por su tipo para el menú
+  const uniqueStandards = standards.filter((std, index, self) =>
+    index === self.findIndex((t) => t.type === std.type)
+  );
+
   const mainItems = [
     { id: 'dashboard', label: 'Tablero de Control', icon: LayoutDashboard },
-    ...standards.map(std => ({
+    ...uniqueStandards.map(std => ({
       id: `std-${std.type}`,
       label: std.type,
       icon: getStandardIcon(std.type)
@@ -99,6 +105,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'norms', label: 'Gestión de Normas', icon: BookOpen },
     { id: 'requirements', label: 'Requisitos y Matriz', icon: Settings },
     { id: 'plants', label: 'Gestión de Plantas', icon: Factory },
+    { id: 'areas', label: 'Gestión de Áreas', icon: Layers },
     { id: 'users', label: 'Usuarios', icon: Users },
     { id: 'settings', label: 'Configuración Global', icon: Sliders },
   ];
@@ -224,7 +231,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 )}
               </button>
               
-              <div className={`mt-1 space-y-1 overflow-hidden transition-all duration-300 ${isAdminExpanded ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className={`mt-1 space-y-1 overflow-hidden transition-all duration-300 ${isAdminExpanded ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'}`}>
                 {adminItems.map((item) => (
                   <button
                     key={item.id}

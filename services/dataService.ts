@@ -1,8 +1,8 @@
 
 import { db, USE_CLOUD_DB } from '../firebaseConfig';
-import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, getDocs, where, orderBy, limit } from 'firebase/firestore';
-import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole, Plant } from '../types';
-import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS } from '../constants';
+import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, getDocs, where, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole, Plant, Area } from '../types';
+import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS, AREAS } from '../constants';
 
 const COLL_ACTIVITIES = 'activities';
 const COLL_USERS = 'users';
@@ -10,6 +10,7 @@ const COLL_STANDARDS = 'standards';
 const COLL_SETTINGS = 'settings';
 const COLL_NOTIFICATIONS = 'notifications';
 const COLL_PLANTS = 'plants';
+const COLL_AREAS = 'areas';
 const DOC_SETTINGS_GENERAL = 'general';
 
 class DataService {
@@ -17,16 +18,13 @@ class DataService {
   private cleanPlantIds(pids: string[] | undefined): string[] {
     if (!pids || !Array.isArray(pids)) return ['MOSQUERA'];
     
-    // Normalización agresiva: Trim, Uppercase y mapeo de variaciones de Mosquera
     const cleaned = pids
       .map(id => String(id || '').trim().toUpperCase())
       .map(id => (id === 'PLT-MOSQUERA' || id === 'MOSQUERA') ? 'MOSQUERA' : id)
       .filter(id => id !== '');
     
-    // Requisito: Siempre debe estar Mosquera (Matriz)
     if (!cleaned.includes('MOSQUERA')) cleaned.push('MOSQUERA');
     
-    // Eliminar duplicados reales
     return Array.from(new Set(cleaned));
   }
 
@@ -183,6 +181,30 @@ class DataService {
     }
   }
 
+  subscribeToAreas(onUpdate: (data: Area[]) => void) {
+    if (USE_CLOUD_DB && db) {
+      const q = query(collection(db, COLL_AREAS), orderBy('name', 'asc'));
+      return onSnapshot(q, (snapshot) => {
+        const areas: Area[] = [];
+        snapshot.forEach(doc => areas.push({ ...doc.data(), id: doc.id } as Area));
+        onUpdate(areas);
+      });
+    } else {
+      const load = () => {
+        const saved = localStorage.getItem('app_areas');
+        if (saved) {
+          onUpdate(JSON.parse(saved));
+        } else {
+          onUpdate(AREAS.map(a => ({ id: `area-${a.toLowerCase()}`, name: a })));
+        }
+      };
+      load();
+      const listener = () => load();
+      window.addEventListener('local-data-changed', listener);
+      return () => window.removeEventListener('local-data-changed', listener);
+    }
+  }
+
   subscribeToSettings(onUpdate: (data: AppSettings) => void) {
     if (USE_CLOUD_DB && db) {
       return onSnapshot(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), (doc) => {
@@ -292,6 +314,21 @@ class DataService {
     }
   }
 
+  async deleteAllActivities() {
+    if (USE_CLOUD_DB && db) {
+      const querySnapshot = await getDocs(collection(db, COLL_ACTIVITIES));
+      const batch = writeBatch(db);
+      querySnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      console.log("Todas las actividades eliminadas de la nube.");
+    } else {
+      localStorage.removeItem('app_activities');
+      window.dispatchEvent(new Event('local-data-changed'));
+    }
+  }
+
   async addUser(user: User) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = user;
@@ -350,6 +387,35 @@ class DataService {
     }
   }
 
+  async addArea(area: Area) {
+    if (USE_CLOUD_DB && db) {
+      const { id, ...data } = area;
+      await setDoc(doc(db, COLL_AREAS, id), this.cleanData(data));
+    } else {
+      const current = this.getLocalAreas();
+      this.saveLocalAreas([...current, area]);
+    }
+  }
+
+  async updateArea(area: Area) {
+    if (USE_CLOUD_DB && db) {
+      const { id, ...data } = area;
+      await updateDoc(doc(db, COLL_AREAS, id), this.cleanData(data));
+    } else {
+      const current = this.getLocalAreas();
+      this.saveLocalAreas(current.map(a => a.id === area.id ? area : a));
+    }
+  }
+
+  async deleteArea(id: string) {
+    if (USE_CLOUD_DB && db) {
+      await deleteDoc(doc(db, COLL_AREAS, id));
+    } else {
+      const current = this.getLocalAreas();
+      this.saveLocalAreas(current.filter(a => a.id !== id));
+    }
+  }
+
   async addStandard(std: StandardDefinition) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = std;
@@ -363,7 +429,7 @@ class DataService {
   async updateStandard(std: StandardDefinition) {
     if (USE_CLOUD_DB && db) {
       const { id, ...data } = std;
-      await setDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
+      await updateDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
     } else {
       const current = this.getLocalStandards();
       this.saveLocalStandards(current.map(s => s.id === std.id ? std : s));
@@ -433,6 +499,16 @@ class DataService {
     window.dispatchEvent(new Event('local-data-changed'));
   }
 
+  private getLocalAreas(): Area[] {
+    const s = localStorage.getItem('app_areas');
+    return s ? JSON.parse(s) : AREAS.map(a => ({ id: `area-${a.toLowerCase()}`, name: a }));
+  }
+
+  private saveLocalAreas(data: Area[]) {
+    localStorage.setItem('app_areas', JSON.stringify(data));
+    window.dispatchEvent(new Event('local-data-changed'));
+  }
+
   public async seedInitialData() {
     if (!USE_CLOUD_DB || !db) throw new Error("No hay conexión a la Nube");
     
@@ -467,16 +543,21 @@ class DataService {
 
     const initialPlants: Plant[] = [
       { id: 'MOSQUERA', name: 'Mosquera', location: 'Cundinamarca', isMain: true, description: 'Sede Matriz Principal' },
-      { id: 'plt-cartagena', name: 'Cartagena', location: 'Bolívar', isMain: false, description: 'Planta de Producción Costa' },
-      { id: 'plt-cali', name: 'Cali', location: 'Valle del Cauca', isMain: false, description: 'Planta de Producción Occidente' },
-      { id: 'plt-yali', name: 'Yali', location: 'Antioquia', isMain: false, description: 'Planta de Extracción' },
-      { id: 'plt-diluvio', name: 'Diluvio', location: 'Meta', isMain: false, description: 'Planta Operativa' },
-      { id: 'plt-socialway', name: 'SocialWay', location: 'N/A', isMain: false, description: 'Unidad de Negocio Social' },
-      { id: 'plt-ecocentral', name: 'EcoCentral', location: 'N/A', isMain: false, description: 'Unidad de Reciclaje' }
+      { id: 'PLT-CARTAGENA', name: 'Cartagena', location: 'Bolívar', isMain: false, description: 'Planta de Producción Costa' },
+      { id: 'PLT-CALI', name: 'Cali', location: 'Valle del Cauca', isMain: false, description: 'Planta de Producción Occidente' },
+      { id: 'PLT-YALI', name: 'Yali', location: 'Antioquia', isMain: false, description: 'Planta de Extracción' },
+      { id: 'PLT-DILUVIO', name: 'Diluvio', location: 'Meta', isMain: false, description: 'Planta Operativa' },
+      { id: 'PLT-SOCIALWAY', name: 'SocialWay', location: 'N/A', isMain: false, description: 'Unidad de Negocio Social' },
+      { id: 'PLT-ECOCENTRAL', name: 'EcoCentral', location: 'N/A', isMain: false, description: 'Unidad de Reciclaje' }
     ];
 
     for (const plt of initialPlants) {
       batchPromises.push(setDoc(doc(db, COLL_PLANTS, plt.id), this.cleanData(plt)));
+    }
+
+    const initialAreas: Area[] = AREAS.map(a => ({ id: `area-${a.toLowerCase().replace(/\s+/g, '-')}`, name: a }));
+    for (const area of initialAreas) {
+      batchPromises.push(setDoc(doc(db, COLL_AREAS, area.id), this.cleanData(area)));
     }
 
     await Promise.all(batchPromises);
