@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "npx serve .",
+    "build": "mkdir -p dist && cp index.html metadata.json dist/ && cp index.tsx App.tsx types.ts constants.ts firebaseConfig.ts dist/ && cp -r components services dist/ || true",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",
