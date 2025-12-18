@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "npx serve .",
-    "build": "mkdir -p dist && cp index.html metadata.json dist/ && cp index.tsx App.tsx types.ts constants.ts firebaseConfig.ts dist/ && cp -r components services dist/ || true",
+    "build": "mkdir -p dist && npx esbuild index.tsx --bundle --outfile=dist/index.js --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && sed -i 's/index.tsx/index.js/g' dist/index.html",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",
@@ -16,6 +16,7 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.20.1",
     "eslint": "^8.56.0",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.0",
