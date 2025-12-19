@@ -4,4 +4,4 @@ appPath: .
 buildConfig:
   command: npm run build
 runConfig:
-  command: npm start
+  command: npm run start
