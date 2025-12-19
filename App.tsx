@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -153,7 +154,7 @@ function App() {
     // Módulos Independientes
     switch (activeView) {
       case 'dashboard': 
-        return <Dashboard activities={activities} areas={areas} plants={plants} />;
+        return <Dashboard activities={activities} areas={areas} plants={plants} currentYear={currentYear} />;
       
       case 'evidence-dashboard': 
         return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handlers.activity.update} />;
@@ -177,7 +178,7 @@ function App() {
         return <SystemSettings currentLogo={companyLogo} onLogoChange={(logo) => setCompanyLogo(logo)} />;
       
       default: 
-        return <Dashboard activities={activities} areas={areas} plants={plants} />;
+        return <Dashboard activities={activities} areas={areas} plants={plants} currentYear={currentYear} />;
     }
   };
 

@@ -1,13 +1,21 @@
+
 {
   "name": "sig-manager-pro",
   "version": "1.2.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "npx serve .",
     "build": "mkdir -p dist && npx esbuild index.tsx --bundle --outfile=dist/index.js --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/",
+    "start": "npx serve dist",
     "test": "vitest run",
     "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
   },
   "devDependencies": {
     "esbuild": "^0.20.1",

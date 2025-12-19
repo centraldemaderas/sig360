@@ -1,0 +1,7 @@
+
+kind: AppStack
+appPath: .
+buildConfig:
+  command: npm run build
+runConfig:
+  command: npm start

@@ -15,6 +15,7 @@ interface DashboardProps {
   activities: Activity[];
   areas: Area[];
   plants: Plant[];
+  currentYear: number;
 }
 
 const COLORS = ['#1e293b', '#b91c1c', '#2563eb', '#059669', '#d97706', '#7c3aed'];
@@ -35,8 +36,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, trend, colorClass }: any) 
   </div>
 );
 
-export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants }) => {
-  const currentYear = 2025;
+export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants, currentYear }) => {
   const currentMonth = new Date().getMonth();
 
   const stats = useMemo(() => {
@@ -110,7 +110,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
     const deterioration = Math.max(0, 100 - compliance);
 
     return { compliance, criticalCount, deterioration, evidenceTotal: `${totalApproved}/${totalPlanned}`, areaStats, normStats, plantStats, monthlyData };
-  }, [activities, plants, currentMonth]);
+  }, [activities, plants, currentMonth, currentYear]);
 
   return (
     <div className="flex flex-col gap-3 h-[calc(100vh-100px)] overflow-hidden">
@@ -121,12 +121,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
             <div className="bg-red-600 p-1 rounded-lg mr-3">
               <ShieldCheck size={16} className="text-white" />
             </div>
-            <h2 className="text-sm font-black tracking-tight uppercase">Resumen de Auditoría Interna</h2>
+            <h2 className="text-sm font-black tracking-tight uppercase">Resumen de Auditoría Interna {currentYear}</h2>
             <span className="ml-3 px-2 py-0.5 bg-red-600 text-[7px] font-black rounded-full uppercase tracking-widest animate-pulse">Prioritario</span>
           </div>
           <p className="text-slate-400 max-w-5xl leading-tight text-[11px] font-medium italic">
-            Bienvenido al panel integral de <strong className="text-white">Central de Maderas</strong>. Actualmente, el cumplimiento global es del <span className="text-white font-black text-lg">{stats.compliance}%</span>. 
-            Se requiere atención en <strong className="text-red-400">Compras</strong> e <strong className="text-red-400">Inventarios</strong>.
+            Bienvenido al panel integral de <strong className="text-white">Central de Maderas</strong>. Actualmente, el cumplimiento global del año <span className="text-white font-black">{currentYear}</span> es del <span className="text-white font-black text-lg">{stats.compliance}%</span>. 
           </p>
         </div>
         <div className="absolute right-0 top-0 h-full w-1/4 bg-gradient-to-l from-red-600/10 to-transparent skew-x-12 translate-x-20"></div>
@@ -142,14 +141,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
 
       {/* Main Charts Grid - Expandido */}
       <div className="grid grid-cols-12 gap-3 flex-1 min-h-0">
-        <div className="col-span-12 lg:col-span-7 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
+        <div className="col-span-12 lg:col-span-7 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-[10px] font-black text-slate-800 flex items-center uppercase tracking-widest">
               <div className="w-1 h-4 bg-red-600 rounded-full mr-2"></div>
               Cumplimiento por Área
             </h3>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.areaStats} layout="vertical" margin={{ left: 5, right: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
@@ -166,12 +165,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-5 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col">
-          <h3 className="text-[10px] font-black text-slate-800 mb-3 flex items-center uppercase tracking-widest">
+        <div className="col-span-12 lg:col-span-5 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0">
+          <h3 className="text-[10px] font-black text-slate-800 mb-3 flex items-center uppercase tracking-widest shrink-0">
             <div className="w-1 h-4 bg-slate-800 rounded-full mr-2"></div>
             Evolución y Deterioro
           </h3>
-          <div className="flex-1">
+          <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={stats.monthlyData.slice(0, 6)}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -186,12 +185,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-4 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col">
-          <h3 className="text-[10px] font-black text-slate-800 mb-2 flex items-center uppercase tracking-widest">
+        <div className="col-span-12 lg:col-span-4 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0">
+          <h3 className="text-[10px] font-black text-slate-800 mb-2 flex items-center uppercase tracking-widest shrink-0">
             <Target size={12} className="mr-2 text-blue-600" />
             Por Norma
           </h3>
-          <div className="flex-1">
+          <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={stats.normStats} innerRadius={35} outerRadius={50} paddingAngle={5} dataKey="value" nameKey="name">
@@ -206,12 +205,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ activities, areas, plants 
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-8 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col">
-          <h3 className="text-[10px] font-black text-slate-800 mb-2 flex items-center uppercase tracking-widest">
+        <div className="col-span-12 lg:col-span-8 bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0">
+          <h3 className="text-[10px] font-black text-slate-800 mb-2 flex items-center uppercase tracking-widest shrink-0">
             <Factory size={12} className="mr-2 text-red-600" />
             Rendimiento por Planta
           </h3>
-          <div className="flex-1">
+          <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.plantStats} margin={{bottom: 10}}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />

@@ -3,12 +3,23 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MONTHS } from '../constants';
 import { Activity, Area, Periodicity, User, Evidence, CommentLog, MonthlyExecution, Plant } from '../types';
 import { 
-  Check, X, Cloud, FileText, AlertCircle, Eye, Clock, History, 
-  ShieldCheck, CheckCircle, BookOpen, Target, ArrowRight, MapPin, BadgeCheck,
-  Upload, Move, Folder, Search, UserCircle, ChevronLeft, Library, Download, 
-  Monitor, FileSearch, FileUp, ExternalLink
+  Check, X, Cloud, FileText, AlertCircle, Filter, Eye, Clock, History, 
+  ShieldCheck, CheckCircle, Info, BookOpen, Target, Factory, Shield, 
+  FileUp, ExternalLink, ListChecks, ArrowRight, Layers, MapPin, BadgeCheck,
+  TreePine, Upload, Move, Link, Globe, ShieldAlert, Folder, Search,
+  UserCircle, ChevronLeft, Library, Download, Briefcase, Tags, FileSearch, Monitor
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
+
+interface StandardViewProps {
+  standard: string;
+  activities: Activity[];
+  areas: Area[];
+  onUpdateActivity: (activity: Activity) => void;
+  currentYear: number;
+  setCurrentYear: (year: number) => void;
+  currentUser: User;
+}
 
 // Simulador de Biblioteca SIG
 const SIG_LIBRARY_FS: Record<string, any[]> = {
@@ -53,12 +64,17 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [externalUrl, setExternalUrl] = useState('');
   const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
 
+  // Sincronizar norma seleccionada cuando cambia desde el padre (sidebar)
+  useEffect(() => {
+    setSelectedStandard(initialStandard);
+  }, [initialStandard]);
+
   // Estados Biblioteca SIG
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [currentFolderPath, setCurrentFolderPath] = useState<string[]>(['root']);
 
-  // Estados para Draggable - Ajustado para iniciar a la derecha como en la foto 3
-  const [modalPos, setModalPos] = useState({ x: 120, y: 0 });
+  // Estados para Draggable
+  const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
 
@@ -144,8 +160,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(false);
     setUploadTab('FILE');
     setExternalUrl('');
-    // Al abrir el modal, forzamos la posición a la derecha como en la foto 3
-    setModalPos({ x: 120, y: 0 }); 
+    setModalPos({ x: 0, y: 0 }); 
     setShowLibraryPicker(false);
     setCurrentFolderPath(['root']);
   };
@@ -161,11 +176,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const handleDownload = (url: string, name: string) => {
-    // Si es una URL simulada, no intentamos descargar realmente
-    if (url.startsWith('internal_sig_storage_')) {
-      alert('Descarga simulada de archivo: ' + name);
-      return;
-    }
+    if (!url) return;
     const link = document.createElement('a');
     link.href = url;
     link.download = name;
@@ -264,7 +275,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       setCurrentFolderPath([...currentFolderPath, file.items]);
       return;
     }
-    const url = `internal_sig_storage_${file.name}`;
+    const url = `sig-internal-lib://view?id=${file.id}`;
     handleEvidenceSubmit('LINK', url, file.name);
     setShowLibraryPicker(false);
   };
@@ -415,7 +426,26 @@ export const StandardView: React.FC<StandardViewProps> = ({
           </div>
 
           <div className="flex gap-2 flex-wrap xl:flex-nowrap">
-            {/* Stats removed from here for brevity or if desired to keep, but keeping original structure mostly */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+              <ListChecks size={14} className="text-slate-500" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-slate-800 leading-none">{stats.totalActive}</span><span className="text-[7px] font-bold text-slate-400 uppercase">Total Requisitos</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-xl">
+              <Check size={14} className="text-green-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-green-700 leading-none">{stats.approved}</span><span className="text-[7px] font-bold text-green-600 uppercase">Aprobados</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-xl">
+              <Clock size={14} className="text-blue-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-blue-700 leading-none">{stats.pending}</span><span className="text-[7px] font-bold text-blue-600 uppercase">Pendientes</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-100 rounded-xl">
+              <AlertCircle size={14} className="text-orange-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-orange-700 leading-none">{stats.rejected}</span><span className="text-[7px] font-bold text-orange-600 uppercase">Rechazados</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
+              <ShieldAlert size={14} className="text-red-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-red-700 leading-none">{stats.overdue}</span><span className="text-[7px] font-bold text-red-600 uppercase">Vencidos</span></div>
+            </div>
           </div>
         </div>
       </div>
@@ -503,8 +533,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin bg-slate-50/30">
-              {/* FICHA TÉCNICA REMOVIDA SEGÚN SOLICITUD 2 */}
-
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6">
                   <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
@@ -537,13 +565,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                               <Eye size={16} />
                             </button>
                             <button 
-                              onClick={() => {
-                                if (activeEvidence.url.startsWith('internal_sig_storage_')) {
-                                   openPreview(activeEvidence.url, activeEvidence.fileName);
-                                } else {
-                                   window.open(activeEvidence.url, '_blank');
-                                }
-                              }}
+                              onClick={() => window.open(activeEvidence.url, '_blank')}
                               className="p-2.5 bg-white hover:bg-slate-900 text-slate-600 hover:text-white rounded-xl transition-all shadow-sm border border-slate-200"
                               title="Enlace Externo"
                             >
@@ -630,16 +652,16 @@ export const StandardView: React.FC<StandardViewProps> = ({
                             </div>
                             <p className="text-slate-500 font-medium leading-relaxed italic border-l-2 border-slate-100 pl-3">"{log.text}"</p>
                             
-                            {(log.fileUrl || (idx > 0 && activeEvidence.url)) && (
+                            {(log.fileUrl || (idx > 0 && activeEvidence?.url)) && (
                               <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-3">
                                  <button 
-                                  onClick={() => openPreview(log.fileUrl || activeEvidence.url, log.fileName || activeEvidence.fileName)}
+                                  onClick={() => openPreview(log.fileUrl || activeEvidence!.url, log.fileName || activeEvidence!.fileName)}
                                   className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-black text-[9px] uppercase tracking-tighter transition-all"
                                  >
                                    <Eye size={12} /> Previsualizar
                                  </button>
                                  <button 
-                                  onClick={() => handleDownload(log.fileUrl || activeEvidence.url, log.fileName || activeEvidence.fileName)}
+                                  onClick={() => handleDownload(log.fileUrl || activeEvidence!.url, log.fileName || activeEvidence!.fileName)}
                                   className="flex items-center gap-1.5 text-slate-600 hover:text-slate-800 font-black text-[9px] uppercase tracking-tighter transition-all"
                                  >
                                    <Download size={12} /> Descargar versión
@@ -649,6 +671,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                           </div>
                         </div>
                       ))}
+                      {!activeEvidence && <p className="text-[10px] text-slate-300 font-bold italic text-center py-6 border-2 border-dashed border-slate-100 rounded-3xl uppercase tracking-[0.2em]">Sin trazabilidad previa</p>}
                     </div>
                   </div>
                 </div>
@@ -702,29 +725,66 @@ export const StandardView: React.FC<StandardViewProps> = ({
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-0">
-                  {/* ... Explorador library content ... */}
+                  <div className="p-4 border-b flex gap-4 items-center shrink-0 bg-slate-50">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input type="text" placeholder="Buscar documentos, manuales o registros..." className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:border-purple-500 outline-none shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase text-slate-600 bg-white border border-slate-200 rounded-xl shadow-sm">
+                        <UserCircle className="text-purple-600" size={16} /> {currentUser.name}
+                      </div>
+                  </div>
+                  
                   <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-white">
                       <div className="grid grid-cols-1 gap-2 max-w-4xl mx-auto">
                         {currentFolderPath.length > 1 && (
-                          <div onClick={goBackLibrary} className="flex items-center p-4 text-purple-600 text-[11px] font-black uppercase hover:bg-purple-50 cursor-pointer rounded-2xl border-2 border-purple-100 mb-4 transition-all shadow-sm active:scale-[0.98]">
-                              <ChevronLeft size={20} className="mr-4" /> Nivel Superior
+                          <div 
+                            onClick={goBackLibrary}
+                            className="flex items-center p-4 text-purple-600 text-[11px] font-black uppercase hover:bg-purple-50 cursor-pointer rounded-2xl border-2 border-purple-100 mb-4 transition-all shadow-sm active:scale-[0.98]"
+                          >
+                              <div className="p-2 bg-purple-100 rounded-xl mr-4">
+                                <ChevronLeft size={20} />
+                              </div>
+                              Nivel Superior / Carpeta Anterior
                           </div>
                         )}
+
+                        <div className="flex items-center p-3 text-slate-400 text-[10px] font-black uppercase tracking-widest mb-4 border-b-2 border-slate-50">
+                            Ubicación Actual: {currentFolderPath.join(' / ').toUpperCase()}
+                        </div>
+
                         {getCurrentLibraryFiles().map(file => (
-                            <div key={file.id} onClick={() => selectLibraryFile(file)} className="flex items-center justify-between p-5 border-2 border-transparent hover:border-purple-200 hover:bg-purple-50 cursor-pointer rounded-2xl transition-all group shadow-sm mb-2">
+                            <div 
+                            key={file.id} 
+                            onClick={() => selectLibraryFile(file)}
+                            className={`flex items-center justify-between p-5 border-2 border-transparent hover:border-purple-200 hover:bg-purple-50 cursor-pointer rounded-2xl transition-all group shadow-sm mb-2 ${file.type === 'folder' ? 'bg-slate-50' : 'bg-white'}`}
+                            >
                               <div className="flex items-center min-w-0">
-                                  <div className="p-3 rounded-2xl mr-5 bg-purple-600 text-white shadow-sm">
+                                  <div className={`p-3 rounded-2xl mr-5 shadow-sm transition-transform group-hover:scale-110 ${
+                                    file.type === 'folder' ? 'bg-purple-600 text-white' : 
+                                    file.type === 'pdf' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+                                  }`}>
                                     {file.type === 'folder' ? <Folder size={24} /> : <FileText size={24} />}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-[12px] font-black uppercase tracking-tight group-hover:text-purple-700 truncate">{file.name}</p>
-                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Versión Actualizada</p>
+                                    <p className={`text-[12px] font-black uppercase tracking-tight group-hover:text-purple-700 truncate ${file.type === 'folder' ? 'text-purple-600' : 'text-slate-700'}`}>
+                                      {file.name}
+                                    </p>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-2">
+                                      {file.type === 'folder' ? <><Layers size={10}/> Repositorio Organizado</> : <><History size={10}/> Versión Actualizada • {file.size}</>}
+                                    </p>
                                   </div>
                               </div>
-                              <ArrowRight size={18} className="text-slate-200 group-hover:text-purple-500" />
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest group-hover:text-purple-400 transition-colors">{file.type === 'folder' ? 'Abrir' : 'Seleccionar'}</span>
+                                <ArrowRight size={18} className="text-slate-200 group-hover:text-purple-500 transform translate-x-0 group-hover:translate-x-1 transition-all" />
+                              </div>
                             </div>
                         ))}
                       </div>
+                  </div>
+                  <div className="p-6 bg-slate-50 border-t flex justify-end">
+                      <button onClick={() => setShowLibraryPicker(false)} className="px-10 py-3.5 bg-white border-2 border-slate-200 rounded-2xl text-[11px] font-black uppercase text-slate-400 hover:text-slate-900 shadow-sm transition-all hover:border-slate-300">Cancelar y Volver</button>
                   </div>
                 </div>
               </div>
@@ -733,7 +793,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </div>
       )}
       
-      {/* MODAL DE PREVISUALIZACIÓN - CORREGIDO PARA EVITAR 404 (SOLICITUD 3) */}
+      {/* MODAL DE PREVISUALIZACIÓN */}
       {previewModalOpen && previewFile && (
         <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[10001] p-4 backdrop-blur-md animate-in fade-in duration-300">
            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
@@ -748,7 +808,10 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     </div>
                  </div>
                  <div className="flex items-center gap-3">
-                    <button onClick={() => handleDownload(previewFile.url, previewFile.name)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95">
+                    <button 
+                      onClick={() => handleDownload(previewFile.url, previewFile.name)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/30 active:scale-95"
+                    >
                       <Download size={14} /> Descargar
                     </button>
                     <button onClick={() => setPreviewModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white border border-transparent hover:border-red-400">
@@ -758,65 +821,42 @@ export const StandardView: React.FC<StandardViewProps> = ({
               </div>
               
               <div className="flex-1 bg-slate-100 flex items-center justify-center p-6 overflow-hidden relative">
+                 {/* Lógica de renderizado según extensión (simulada) */}
                  <div className="w-full h-full bg-white rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center text-center">
-                    {/* SI ES UNA URL SIMULADA (FOTO 4 FIX) MOSTRAR VISOR INTERNO EN LUGAR DE IFRAME */}
-                    {previewFile.url.startsWith('internal_sig_storage_') ? (
-                       <div className="flex-1 w-full h-full flex flex-col bg-slate-50">
-                          <div className="p-3 bg-slate-200 border-b flex justify-between items-center">
-                             <div className="flex items-center gap-2">
-                                <FileText size={16} className="text-red-600" />
-                                <span className="text-[10px] font-black uppercase text-slate-600">{previewFile.name}</span>
-                             </div>
-                             <div className="flex gap-2">
-                                <div className="w-32 h-2 bg-slate-300 rounded-full"></div>
-                                <div className="w-8 h-2 bg-slate-300 rounded-full"></div>
+                    {previewFile.name.toLowerCase().endsWith('.pdf') ? (
+                      <div className="w-full h-full flex flex-col">
+                        <div className="flex-1 flex flex-col items-center justify-center space-y-4 opacity-50">
+                          <FileText size={64} className="text-red-600" />
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">Visualizador de PDF Activo</p>
+                        </div>
+                        {/* Solo cargar el iframe si la URL parece válida, de lo contrario mostrar placeholder */}
+                        {(previewFile.url.startsWith('http') || previewFile.url.startsWith('data:') || previewFile.url.startsWith('/')) ? (
+                          <iframe src={previewFile.url} className="absolute inset-0 w-full h-full border-none" title="PDF Viewer" />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-50 p-10">
+                             <div className="space-y-4">
+                                <AlertCircle size={48} className="mx-auto text-slate-300" />
+                                <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Documento almacenado internamente</p>
+                                <button onClick={() => handleDownload(previewFile.url, previewFile.name)} className="px-6 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">Descargar para ver</button>
                              </div>
                           </div>
-                          <div className="flex-1 p-8 overflow-y-auto flex flex-col items-center">
-                             <div className="w-[210mm] min-h-[297mm] bg-white shadow-xl p-16 text-left border border-slate-200 animate-in slide-in-from-bottom-4 duration-700">
-                                <div className="flex justify-between border-b-2 border-slate-900 pb-6 mb-8">
-                                   <div className="font-black text-2xl uppercase tracking-tighter">Central de Maderas G&S SAS</div>
-                                   <div className="text-right">
-                                      <p className="font-black text-[10px] uppercase">Código: SIG-DOC-V1</p>
-                                      <p className="font-black text-[10px] uppercase">Fecha: 10/10/2025</p>
-                                   </div>
-                                </div>
-                                <h1 className="text-3xl font-black uppercase text-center mb-12 border-b border-slate-100 pb-4">{previewFile.name.replace('.pdf', '')}</h1>
-                                <div className="space-y-6">
-                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
-                                   <div className="h-4 bg-slate-100 rounded w-[95%]"></div>
-                                   <div className="h-4 bg-slate-100 rounded w-[98%]"></div>
-                                   <div className="h-4 bg-slate-100 rounded w-[92%]"></div>
-                                   <div className="grid grid-cols-2 gap-8 py-8">
-                                      <div className="h-32 bg-slate-50 border border-slate-100 rounded-xl"></div>
-                                      <div className="h-32 bg-slate-50 border border-slate-100 rounded-xl"></div>
-                                   </div>
-                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
-                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
-                                   <div className="pt-20 flex justify-between">
-                                      <div className="w-48 border-t border-slate-900 pt-2 text-center">
-                                         <p className="font-black text-[8px] uppercase">Firma Responsable</p>
-                                         <p className="text-[10px] font-bold">Líder de Proceso</p>
-                                      </div>
-                                      <div className="w-48 border-t border-slate-900 pt-2 text-center">
-                                         <p className="font-black text-[8px] uppercase">Sello de Calidad</p>
-                                         <p className="text-[10px] font-bold">SIG-AUDIT-VERIFIED</p>
-                                      </div>
-                                   </div>
-                                </div>
-                             </div>
-                             <div className="p-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.5em] italic">Fin del Documento</div>
-                          </div>
-                       </div>
-                    ) : previewFile.name.toLowerCase().endsWith('.pdf') ? (
-                      <iframe src={previewFile.url} className="w-full h-full border-none" />
+                        )}
+                      </div>
                     ) : (previewFile.name.toLowerCase().endsWith('.jpg') || previewFile.name.toLowerCase().endsWith('.png')) ? (
                       <img src={previewFile.url} alt="Previsualización" className="max-w-full max-h-full object-contain p-4" />
                     ) : (
                       <div className="space-y-6 max-w-sm">
-                         <div className="p-8 bg-blue-50 rounded-full inline-block mb-2"><FileSearch size={64} className="text-blue-600" /></div>
-                         <h4 className="text-lg font-black text-slate-800 uppercase">Visualización no disponible</h4>
-                         <p className="text-xs text-slate-500 font-medium">Use el botón superior para descargar el documento original.</p>
+                         <div className="p-8 bg-blue-50 rounded-full inline-block mb-2">
+                           <FileSearch size={64} className="text-blue-600" />
+                         </div>
+                         <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-tight">Visualización no disponible para este formato</h4>
+                         <p className="text-xs text-slate-500 font-medium">Este tipo de archivo requiere software externo para su visualización. Utilice el botón superior para descargar el documento original.</p>
+                         <button 
+                          onClick={() => handleDownload(previewFile.url, previewFile.name)}
+                          className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 mx-auto"
+                         >
+                           <Download size={16} /> Descargar Ahora
+                         </button>
                       </div>
                     )}
                  </div>
@@ -831,26 +871,38 @@ export const StandardView: React.FC<StandardViewProps> = ({
       
       {infoModalOpen && activeActivity && (
         <div className="fixed inset-0 bg-slate-950/70 flex items-start justify-center z-[9999] p-4 pt-10 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-top-4 duration-300 border border-slate-200 overflow-hidden">
              <div className="p-6 bg-[#1e293b] text-white flex justify-between items-center shrink-0">
                 <div className="flex items-center">
-                   <div className="p-3 bg-red-600 rounded-xl mr-4 shadow-xl"><BookOpen size={24} /></div>
+                   <div className="p-3 bg-red-600 rounded-xl mr-4 shadow-xl">
+                     <BookOpen size={24} className="text-white" />
+                   </div>
                    <div>
-                      <h3 className="text-sm font-black uppercase leading-tight">{activeActivity.clauseTitle}</h3>
+                      <h3 className="text-sm font-black leading-tight tracking-tight uppercase line-clamp-2">{activeActivity.clauseTitle}</h3>
                       <div className="flex gap-2 mt-2">
-                        <span className="text-[8px] font-black uppercase tracking-wider bg-blue-900/60 px-2 py-1 rounded">Numeral: {activeActivity.subClause}</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-blue-900/60 px-2 py-1 rounded border border-blue-700/50">Numeral: {activeActivity.subClause}</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-slate-800 px-2 py-1 rounded border border-slate-700">{activeActivity.periodicity}</span>
                       </div>
                    </div>
                 </div>
-                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full"><X size={24} /></button>
+                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white"><X size={24} /></button>
              </div>
-             <div className="p-6 space-y-6 overflow-y-auto flex-1">
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-[11px] text-slate-600 italic">
-                  {activeActivity.description}
+             <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin flex-1">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-[11px] text-slate-600 leading-relaxed italic font-medium">
+                  <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-widest mb-3"><ShieldCheck size={14} className="mr-2" /> Descripción</div>
+                  "{activeActivity.description}"
                 </div>
-                <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100/50 text-[11px] text-slate-800">
+                <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100/50 text-[11px] text-slate-800 leading-relaxed font-semibold">
+                  <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-widest mb-3"><Target size={14} className="mr-2" /> Contexto Interno</div>
                   {activeActivity.contextualization}
                 </div>
+                <div className="bg-orange-50/30 p-6 rounded-2xl border border-orange-100/50 text-[11px] text-orange-950 font-black">
+                  <div className="flex items-center text-orange-600 font-black text-[9px] uppercase tracking-widest mb-3"><BadgeCheck size={14} className="mr-2" /> Criterio de Auditoría</div>
+                  {activeActivity.relatedQuestions}
+                </div>
+             </div>
+             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button onClick={() => setInfoModalOpen(false)} className="px-8 py-3 bg-[#0f172a] text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2">Cerrar Consulta <ArrowRight size={14}/></button>
              </div>
           </div>
         </div>
