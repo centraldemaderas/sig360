@@ -1,8 +1,8 @@
 {
   "name": "SIG-Manager Pro (Cloud Ready)",
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "status": "PRODUCTION_READY",
-  "developerNotes": "Importmap limpio de dependencias de Node.js. Conectividad Firebase verificada. Version 1.4.3 preparada para build.",
+  "developerNotes": "Importmap limpio de dependencias de Node.js. Conectividad Firebase verificada. Versión 1.4.4 preparada para despliegue corregido.",
   "requestFramePermissions": []
 }
