@@ -1,8 +1,8 @@
 {
   "name": "SIG-Manager Pro (Cloud Ready)",
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "status": "PRODUCTION_READY",
-  "developerNotes": "v1.4.7: Build Lock Fixed. Se sincronizó el package-lock.json con el package.json para satisfacer las restricciones de 'npm ci' en el entorno de Google Cloud Build. Se eliminaron definitivamente las importaciones de Node del index.html.",
+  "developerNotes": "v1.4.8: Sincronización estricta de dependencias. Se han fijado las versiones exactas en package.json y package-lock.json para eliminar el error 'out of sync' en Google Cloud Build. Se añadió 'npm install' al buildCommand para mayor resiliencia del pipeline de despliegue.",
   "requestFramePermissions": []
 }
