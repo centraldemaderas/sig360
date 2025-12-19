@@ -8,26 +8,17 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Servir archivos estáticos con caché optimizada
-app.use(express.static(path.join(__dirname, 'dist'), {
-  maxAge: '1d',
-  etag: true
-}));
+// Servir archivos estáticos de la carpeta dist generada por el build
+app.use(express.static(path.join(__dirname, 'dist')));
 
-// Endpoint de salud para Firebase/Google Cloud
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
-});
+// Ruta de salud para el balanceador de carga de Google
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// Patrón SPA: Redirigir todas las demás peticiones al index.html
+// Redirección SPA: Cualquier ruta que no sea un archivo va al index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log('-------------------------------------------');
-  console.log(`🚀 SIG-Manager Pro: Producción Activa`);
-  console.log(`📍 Puerto: ${PORT}`);
-  console.log(`📅 Fecha: ${new Date().toLocaleString()}`);
-  console.log('-------------------------------------------');
+  console.log(`🚀 Servidor listo en puerto ${PORT}`);
 });

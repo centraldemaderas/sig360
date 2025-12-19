@@ -1,7 +1,9 @@
-
 kind: AppStack
-appPath: .
+schemaVersion: v1
 buildConfig:
-  command: npm run build
+  runtime: nodejs20
+  buildCommand: npm run build
 runConfig:
-  command: npm start
+  runCommand: npm start
+  cpu: 1
+  memoryMiB: 512

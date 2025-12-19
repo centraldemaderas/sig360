@@ -1,11 +1,15 @@
 {
   "name": "sig360",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "npx serve .",
-    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node -e \"const f='dist/index.html'; const h=require('fs').readFileSync(f,'utf8'); require('fs').writeFileSync(f, h.replace('index.tsx','index.js'))\""
+    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node -e \"import fs from 'fs'; const f='dist/index.html'; const h=fs.readFileSync(f,'utf8'); fs.writeFileSync(f, h.replace('index.tsx','index.js'))\"",
+    "start": "node server.js"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -13,6 +17,7 @@
     "lucide-react": "^0.460.0",
     "recharts": "^2.13.0",
     "firebase": "^11.0.2",
+    "express": "^4.18.2",
     "xlsx": "^0.18.5",
     "pdfjs-dist": "^4.8.62"
   },
