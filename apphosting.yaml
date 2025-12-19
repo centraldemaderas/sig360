@@ -6,4 +6,4 @@ buildConfig:
 runConfig:
   runCommand: npm start
   cpu: 1
-  memoryMiB: 512
+  memoryMiB: 1024
