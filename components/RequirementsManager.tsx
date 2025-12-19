@@ -1,15 +1,13 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Periodicity, MonthlyExecution, StandardDefinition, Plant, User, UserRole, Area } from '../types';
 import { AREAS } from '../constants';
 import { dataService } from '../services/dataService';
 import { 
-  Plus, Edit2, Trash2, X, Search, AlertTriangle, ShieldCheck, FileText, 
+  Plus, Edit2, Trash2, X, Search, ShieldCheck, FileText, 
   TreePine, Briefcase, Truck, Factory, CheckSquare, Square, FileUp, 
-  ChevronRight, Info, HelpCircle, Copy, CheckCircle2, AlertCircle,
-  Eye, ListChecks, ArrowRight, ShieldAlert, Check, Loader2, FileSpreadsheet, 
-  AlignLeft, MessageSquare, Target, ClipboardCheck, Hash, Database, Trash, Filter,
-  BookOpen, Layers, Save, MapPin, BadgeCheck, ChevronDown, Clock
+  Save, Filter, BookOpen, Layers, ClipboardCheck, AlignLeft, Target,
+  ChevronDown, Loader2
 } from 'lucide-react';
 
 interface RequirementsManagerProps {
@@ -43,7 +41,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
   const [selectedStandardFilter, setSelectedStandardFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [selectedPeriodicity, setSelectedPeriodicity] = useState<Periodicity>(Periodicity.MONTHLY);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -52,14 +49,32 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
   const [bulkInput, setBulkInput] = useState('');
   const [importStep, setImportStep] = useState(1); 
   const [pendingImports, setPendingImports] = useState<PendingImport[]>([]);
-  const [duplicateQueue, setDuplicateQueue] = useState<PendingImport[]>([]);
-  const [currentDuplicate, setCurrentDuplicate] = useState<PendingImport | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     const unsub = dataService.subscribeToPlants(data => setPlants(data));
     return () => unsub();
   }, []);
+
+  // Lógica de Filtrado Corregida
+  const filteredActivities = useMemo(() => {
+    return activities.filter(activity => {
+      // 1. Filtro por Norma
+      const matchesStandard = selectedStandardFilter === 'ALL' || activity.standards.includes(selectedStandardFilter);
+      
+      // 2. Filtro por Término de Búsqueda (Case Insensitive)
+      const term = searchTerm.toLowerCase().trim();
+      const matchesSearch = !term || 
+        activity.clauseTitle.toLowerCase().includes(term) ||
+        activity.subClause.toLowerCase().includes(term) ||
+        activity.responsibleArea.toLowerCase().includes(term);
+
+      return matchesStandard && matchesSearch;
+    }).sort((a, b) => {
+      // Ordenamiento por numeral para mejor UX
+      return a.subClause.localeCompare(b.subClause, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [activities, searchTerm, selectedStandardFilter]);
 
   const currentAreaList = areas.length > 0 ? areas.map(a => a.name) : AREAS;
 
@@ -113,10 +128,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
     const currentPlants = formData.plantIds || [];
     const targetId = plantId.toUpperCase();
     const isSelected = currentPlants.map(id => id.toUpperCase()).includes(targetId);
-    
-    // Prevent removing Mosquera if it's the only one
     if (targetId === 'MOSQUERA' && isSelected && currentPlants.length === 1) return;
-
     setFormData({ 
       ...formData, 
       plantIds: isSelected 
@@ -145,79 +157,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
     setIsModalOpen(false);
   };
 
-  const processRawMatrix = (matrix: any[]) => {
-    const parsed: PendingImport[] = [];
-    const startIndex = matrix[0]?.some((cell: any) => String(cell).toLowerCase().includes('norma')) ? 1 : 0;
-    for (let i = startIndex; i < matrix.length; i++) {
-      const cols = matrix[i];
-      if (!cols || cols.length < 2) continue;
-      const errors: string[] = [];
-      const rawNorma = String(cols[0] || '').trim();
-      const fullTitle = String(cols[1] || '').trim();
-      const rawDesc = String(cols[2] || '').trim();
-      const rawContext = String(cols[3] || '').trim();
-      const rawTarea = String(cols[4] || '').trim();
-      const rawPeriodicity = String(cols[5] || '').trim();
-      const rawArea = String(cols[6] || '').trim();
-
-      const numeralMatch = rawTarea.match(/^(\d+(\.\d+)+|\d+\.\d+|\d+)\s*(.*)/);
-      const subClause = numeralMatch ? numeralMatch[1] : '';
-      const tareaSinNumeral = numeralMatch ? numeralMatch[3] : rawTarea;
-      const clauseParts = subClause.split('.');
-      const clause = clauseParts.length > 1 ? clauseParts.slice(0, 2).join('.') : subClause;
-
-      if (!rawNorma) errors.push("Falta Norma");
-      if (!subClause) errors.push("Sin Numeral");
-      if (!fullTitle) errors.push("Sin Título");
-
-      let periodicity = Periodicity.ANNUAL;
-      const pL = rawPeriodicity.toLowerCase();
-      if (pL.includes('mensual')) periodicity = Periodicity.MONTHLY;
-      else if (pL.includes('bimestral')) periodicity = Periodicity.BIMONTHLY;
-      else if (pL.includes('trimestral')) periodicity = Periodicity.QUARTERLY;
-      else if (pL.includes('semestral')) periodicity = Periodicity.SEMIANNUAL;
-
-      const area = currentAreaList.find(a => a.toLowerCase() === rawArea.toLowerCase()) || currentAreaList[0];
-      const assignedPlantIds: string[] = [];
-      const plantColMap = [
-        { idx: 7, id: 'MOSQUERA' }, { idx: 8, id: 'PLT-CARTAGENA' }, { idx: 9, id: 'PLT-YALI' }, 
-        { idx: 10, id: 'PLT-DILUVIO' }, { idx: 11, id: 'PLT-CALI' }, { idx: 12, id: 'PLT-ECOCENTRAL' }, { idx: 13, id: 'PLT-SOCIALWAY' }
-      ];
-      plantColMap.forEach(p => { 
-        const cellValue = String(cols[p.idx] || '').trim().toLowerCase();
-        if (cellValue === '1' || cellValue === 'x') assignedPlantIds.push(p.id); 
-      });
-      if (assignedPlantIds.length === 0) assignedPlantIds.push('MOSQUERA');
-
-      const newItem: Activity = {
-        id: `ACT-IMP-${Date.now()}-${i}`,
-        clause, subClause, clauseTitle: fullTitle, description: rawDesc, contextualization: rawContext,
-        relatedQuestions: tareaSinNumeral, standards: [rawNorma], responsibleArea: area, periodicity, plantIds: assignedPlantIds,
-        compliance2024: false, compliance2025: false, plans: { 2025: generateMonthlyPlan(periodicity), 2026: generateMonthlyPlan(periodicity) }
-      };
-      const existing = activities.find(a => a.subClause === subClause);
-      parsed.push({ rawIndex: i, data: newItem, errors, isDuplicate: !!existing, existingActivity: existing });
-    }
-    setPendingImports(parsed);
-    setImportStep(2);
-  };
-
-  const finalizeImport = async () => {
-    const cleanImports = pendingImports.filter(p => p.errors.length === 0);
-    setIsImporting(true);
-    for (const p of cleanImports.filter(p => !p.isDuplicate)) await onAdd(p.data);
-    const duplicates = cleanImports.filter(p => p.isDuplicate);
-    if (duplicates.length > 0) {
-      setDuplicateQueue(duplicates);
-      setCurrentDuplicate(duplicates[0]);
-      setIsDuplicateModalOpen(true);
-    } else {
-      setIsBulkModalOpen(false);
-      alert('Importación finalizada.');
-    }
-    setIsImporting(false);
-  };
-
   const getStandardIcon = (type: string) => {
     const t = type.toLowerCase();
     if (t.includes('9001')) return FileText;
@@ -243,7 +182,13 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
-            <input type="text" placeholder="Buscar requisitos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-medium" />
+            <input 
+              type="text" 
+              placeholder="Buscar por numeral, título o área..." 
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)} 
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-medium" 
+            />
           </div>
           <div className="w-full md:w-72 relative">
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
@@ -257,7 +202,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
           <table className="w-full text-xs text-left border-collapse">
             <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] tracking-[0.2em]"><tr><th className="p-5 w-28 text-center border-r border-slate-100">Numeral</th><th className="p-5">Requisito / Norma</th><th className="p-5">Plantas</th><th className="p-5 w-40">Área</th><th className="p-5 w-32 text-center">Acciones</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {activities.filter(a => (selectedStandardFilter === 'ALL' || a.standards.includes(selectedStandardFilter))).map((activity) => (
+              {filteredActivities.map((activity) => (
                 <tr key={activity.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="p-5 text-center font-black text-slate-700 border-r border-slate-100"><div className="bg-slate-800 text-white px-2 py-1 rounded text-[11px] font-black shadow-sm mb-1">{activity.subClause}</div></td>
                   <td className="p-5"><div className="font-black text-slate-800 mb-1">{activity.clauseTitle}</div><div className="flex flex-wrap gap-1.5 mt-1.5">{activity.standards.map((s, idx) => { const Icon = getStandardIcon(s); return <span key={idx} className="text-[8px] font-black px-2 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-100 uppercase tracking-tighter flex items-center"><Icon size={10} className="mr-1" />{s}</span>; })}</div></td>
@@ -266,13 +211,24 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                   <td className="p-5 text-center"><div className="flex justify-center space-x-2"><button onClick={() => handleOpenModal(activity)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-all"><Edit2 size={16} /></button><button onClick={() => onDelete(activity.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={16} /></button></div></td>
                 </tr>
               ))}
+              {filteredActivities.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <div className="flex flex-col items-center">
+                      <Search size={40} className="text-slate-200 mb-4" />
+                      <p className="text-sm font-black text-slate-400 uppercase tracking-widest">No se encontraron requisitos con estos filtros</p>
+                      <button onClick={() => {setSearchTerm(''); setSelectedStandardFilter('ALL');}} className="mt-4 text-blue-600 text-[10px] font-black uppercase tracking-widest hover:underline">Limpiar Filtros</button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[5000] p-4 backdrop-blur-md overflow-hidden animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[5000] p-4 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 relative">
             <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
               <div className="flex flex-col">
@@ -283,7 +239,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="p-8 space-y-8 overflow-y-auto scrollbar-thin flex-1">
-              {/* Sección 1: Normas (Imagen 2) */}
               <div className="space-y-4">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Normas</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -301,7 +256,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                 </div>
               </div>
 
-              {/* Sección 2: Plantas (Imagen 2) */}
               <div className="space-y-4">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Plantas</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
@@ -318,7 +272,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                 </div>
               </div>
 
-              {/* Sección 3: Numeral y Área (Imagen 2) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Numeral (Tarea)</label>
@@ -335,7 +288,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                 </div>
               </div>
 
-              {/* Sección 4: Título (Imagen 2) */}
               <div className="space-y-2">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Título</label>
                 <input required type="text" value={formData.clauseTitle} onChange={e => setFormData({...formData, clauseTitle: e.target.value})} 
@@ -343,7 +295,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                        placeholder="Título del requisito..." />
               </div>
 
-              {/* Sección 5: Textos completos (Imagen 1) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
@@ -372,7 +323,6 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                           placeholder="Puntos a auditar..." />
               </div>
 
-              {/* Sección 6: Periodicidad (Imagen 2 - Bloque Oscuro) */}
               <div className="bg-slate-900 p-8 rounded-[2.5rem] border-2 border-slate-800 shadow-xl">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Periodicidad</label>
                 <div className="relative">

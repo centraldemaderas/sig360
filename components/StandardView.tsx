@@ -160,7 +160,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(false);
     setUploadTab('FILE');
     setExternalUrl('');
-    // Corregimos posición inicial para que empiece centrado (0,0 con transform translate en un contenedor flex-center es el centro real)
     setModalPos({ x: 0, y: 0 }); 
     setShowOneDrivePicker(false);
     setCurrentFolderPath(['root']);
@@ -172,7 +171,19 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
 
-    const currentYearPlan = [...(activityToUpdate.plans?.[currentYear] || [])];
+    const currentPlans = activityToUpdate.plans || {};
+    let currentYearPlan = [...(currentPlans[currentYear] || [])];
+    
+    // Si el plan está vacío para este año, lo inicializamos con 12 meses vacíos
+    if (currentYearPlan.length === 0) {
+      currentYearPlan = Array.from({ length: 12 }, (_, i) => ({
+        month: i,
+        planned: false,
+        executed: false,
+        delayed: false
+      }));
+    }
+
     const newEvidence: Evidence = {
       url: data,
       type: type,
@@ -189,8 +200,17 @@ export const StandardView: React.FC<StandardViewProps> = ({
       }]
     };
 
-    currentYearPlan[activeMonthIndex] = { ...currentYearPlan[activeMonthIndex], evidence: newEvidence };
-    const updatedActivity: Activity = { ...activityToUpdate, plans: { ...(activityToUpdate.plans || {}), [currentYear]: currentYearPlan } };
+    // Al subir evidencia, nos aseguramos que ese mes cuente como "planificado" 
+    currentYearPlan[activeMonthIndex] = { 
+      ...currentYearPlan[activeMonthIndex], 
+      planned: true, 
+      evidence: newEvidence 
+    };
+
+    const updatedActivity: Activity = { 
+      ...activityToUpdate, 
+      plans: { ...currentPlans, [currentYear]: currentYearPlan } 
+    };
     await onUpdateActivity(updatedActivity);
     setIsSaving(false);
   };
@@ -260,6 +280,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const renderPeriodicityCells = (activity: Activity) => {
     const plan = activity.plans?.[currentYear] || [];
     const cells = [];
+    const currentRealMonth = new Date().getMonth();
+    const currentRealYear = new Date().getFullYear();
+    
     let i = 0;
     while (i < 12) {
       let colSpan = 1;
@@ -271,23 +294,87 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.MONTHLY: default: colSpan = 1; break;
       }
       if (i + colSpan > 12) colSpan = 12 - i;
-      let evidenceFound = null, evidenceIndex = -1, isPlanned = false, plannedIndex = -1;
+      
+      let evidenceFound = null;
+      let evidenceIndex = -1;
+      let hasAnyPlannedInSpan = false;
+      let plannedIndex = -1;
+      let isOverdue = false;
+      
+      // Analizamos cada mes dentro del colSpan
       for (let k = i; k < i + colSpan; k++) {
-        if (plan[k]?.evidence) { evidenceFound = plan[k].evidence; evidenceIndex = k; }
-        if (plan[k]?.planned) { isPlanned = true; plannedIndex = k; }
+        let isMonthPlanned = false;
+        
+        // 1. Verificar si está planificado físicamente o virtualmente
+        if (plan.length > 0) {
+          if (plan[k]?.planned) isMonthPlanned = true;
+        } else {
+          // Lógica virtual
+          switch (activity.periodicity) {
+            case Periodicity.MONTHLY: isMonthPlanned = true; break;
+            case Periodicity.ANNUAL: isMonthPlanned = k === 11; break;
+            case Periodicity.SEMIANNUAL: isMonthPlanned = k === 5 || k === 11; break;
+            case Periodicity.QUARTERLY: isMonthPlanned = (k + 1) % 3 === 0; break;
+            case Periodicity.BIMONTHLY: isMonthPlanned = k % 2 === 0; break;
+          }
+        }
+
+        if (isMonthPlanned) {
+          hasAnyPlannedInSpan = true;
+          // Guardamos el índice para la interacción del modal
+          if (plannedIndex === -1) plannedIndex = k; 
+
+          // 2. Verificar evidencia para este mes específico
+          if (plan[k]?.evidence) {
+            evidenceFound = plan[k].evidence;
+            evidenceIndex = k;
+            // Si hay evidencia, paramos de buscar "vencidos" en este span para priorizar el estado de la evidencia
+          } else {
+            // 3. Si no hay evidencia y es un mes pasado en el año actual o un año pasado
+            if (currentYear < currentRealYear || (currentYear === currentRealYear && k <= currentRealMonth)) {
+              isOverdue = true;
+            }
+          }
+        }
       }
-      let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i + colSpan - 1);
-      let cellBg = "bg-white", cellContent = null;
+
+      // Prioridad de renderizado: Evidencia > Vencido (!) > Pendiente (P)
+      let cellBg = "bg-white";
+      let cellContent = null;
+      let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i);
+
       if (evidenceFound) {
-        if (evidenceFound.status === 'APPROVED') { cellBg = "bg-green-50/50"; cellContent = <Check size={14} className="text-green-500" />; } 
-        else if (evidenceFound.status === 'REJECTED') { cellBg = "bg-orange-50/50"; cellContent = <div className="p-1 bg-orange-100 rounded-full"><AlertCircle size={10} className="text-orange-600" /></div>; } 
-        else { cellBg = "bg-blue-50/50"; cellContent = <Clock size={14} className="text-blue-500" />; }
-      } else if (isPlanned) {
-        const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
-        if (currentYear < currentRealYear || (currentYear === currentRealYear && i <= currentRealMonth)) { cellBg = "bg-red-50/30"; cellContent = <span className="text-red-400 font-bold text-xs">!</span>; } 
-        else { cellBg = "bg-white"; cellContent = <span className="text-slate-200 font-bold text-[9px]">P</span>; }
+        if (evidenceFound.status === 'APPROVED') { 
+          cellBg = "bg-green-50/50"; 
+          cellContent = <Check size={14} className="text-green-500" />; 
+        } else if (evidenceFound.status === 'REJECTED') { 
+          cellBg = "bg-orange-50/50"; 
+          cellContent = <div className="p-1 bg-orange-100 rounded-full"><AlertCircle size={10} className="text-orange-600" /></div>; 
+        } else { 
+          cellBg = "bg-blue-50/50"; 
+          cellContent = <Clock size={14} className="text-blue-500" />; 
+        }
+      } else if (hasAnyPlannedInSpan) {
+        if (isOverdue) { 
+          cellBg = "bg-red-50/30"; 
+          cellContent = <span className="text-red-400 font-bold text-xs">!</span>; 
+        } else { 
+          cellBg = "bg-white"; 
+          cellContent = <span className="text-slate-200 font-bold text-[9px]">P</span>; 
+        }
       }
-      cells.push(<td key={i} colSpan={colSpan} className={`border-r p-0 text-center transition-all relative group ${cellBg} border-slate-100 border-b h-10`}><div onClick={() => isPlanned && openModal(activity.id, interactionIndex)} className={`w-full h-full flex items-center justify-center ${isPlanned ? 'cursor-pointer hover:bg-slate-100/50' : ''}`}>{cellContent}</div></td>);
+
+      cells.push(
+        <td key={i} colSpan={colSpan} className={`border-r p-0 text-center transition-all relative group ${cellBg} border-slate-100 border-b h-10`}>
+          <div 
+            onClick={() => openModal(activity.id, interactionIndex)} 
+            className="w-full h-full flex items-center justify-center cursor-pointer hover:bg-slate-100/50 transition-colors"
+            title="Haga clic para gestionar evidencia"
+          >
+            {cellContent}
+          </div>
+        </td>
+      );
       i += colSpan;
     }
     return cells;
@@ -296,13 +383,28 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const getMissingTasks = (activity: Activity) => {
     const plan = activity.plans?.[currentYear] || [];
     let planned = 0, approved = 0;
-    plan.forEach(m => {
-      if (m.planned) {
-        planned++;
-        if (m.evidence?.status === 'APPROVED') approved++;
+    
+    if (plan.length > 0) {
+      plan.forEach(m => {
+        if (m.planned) {
+          planned++;
+          if (m.evidence?.status === 'APPROVED') approved++;
+        }
+      });
+    } else {
+      // Cálculo virtual de tareas basado en la periodicidad para el contador de avance
+      switch (activity.periodicity) {
+        case Periodicity.MONTHLY: planned = 12; break;
+        case Periodicity.BIMONTHLY: planned = 6; break;
+        case Periodicity.QUARTERLY: planned = 4; break;
+        case Periodicity.SEMIANNUAL: planned = 2; break;
+        case Periodicity.ANNUAL: planned = 1; break;
+        default: planned = 0;
       }
-    });
-    return { pending: planned - approved, total: planned };
+      approved = 0;
+    }
+
+    return { pending: planned - approved, approved, total: planned };
   };
 
   const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
@@ -357,7 +459,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
         <table className="w-full text-[10px] text-left border-collapse table-fixed">
           <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[9px] tracking-widest sticky top-0 z-10 shadow-sm border-b border-slate-200">
             <tr>
-              <th className="p-2 border-r w-12 text-center">Claus.</th>
+              <th className="p-2 border-r w-12 text-center">Claus..</th>
               <th className="p-2 border-r min-w-[150px]">Requisito</th>
               <th className="p-2 border-r min-w-[180px]">Criterio Auditoría</th>
               {MONTHS.map(m => <th key={m} className="p-2 border-r text-center w-8">{m}</th>)}
@@ -366,7 +468,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredActivities.map((activity) => {
-                const missing = getMissingTasks(activity);
+                const { pending, total, approved } = getMissingTasks(activity);
+                const isReady = total > 0 && pending === 0;
+
                 return (
                   <tr key={activity.id} className="hover:bg-slate-50/30 transition-colors h-10">
                     <td className="p-2 border-r border-slate-100 text-center font-black bg-white">{activity.subClause}</td>
@@ -379,8 +483,12 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     </td>
                     {renderPeriodicityCells(activity)}
                     <td className="p-2 text-center sticky right-0 bg-white shadow-l border-l border-slate-100">
-                      <div className={`px-1 py-0.5 rounded text-[8px] font-black border ${missing.pending === 0 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                        {missing.pending === 0 ? 'LISTO' : `${missing.total - missing.pending}/${missing.total}`}
+                      <div className={`px-1 py-0.5 rounded text-[8px] font-black border transition-colors ${
+                        isReady 
+                          ? 'bg-green-50 text-green-600 border-green-200 shadow-sm' 
+                          : 'bg-slate-50 text-slate-500 border-slate-100'
+                      }`}>
+                        {isReady ? 'LISTO' : `${approved}/${total}`}
                       </div>
                     </td>
                   </tr>
@@ -464,7 +572,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                       <div className="space-y-4">
                         <div className="p-4 bg-white rounded-2xl border border-slate-200">
                           <div className="flex items-center gap-3 mb-3">
-                            {/* Logo Restaurado (Foto 3) */}
                             <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-5 h-5" alt="OneDrive" />
                             <span className="text-[10px] font-black uppercase tracking-tighter text-slate-700">OneDrive / Link Corporativo</span>
                           </div>
@@ -553,7 +660,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
               <button onClick={() => setModalOpen(false)} className="px-10 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl">Cerrar Panel</button>
             </div>
 
-            {/* SIMULADOR DE ONEDRIVE PICKER - Mejorado (Foto 4) */}
+            {/* SIMULADOR DE ONEDRIVE PICKER */}
             {showOneDrivePicker && (
               <div className="absolute inset-0 z-[10000] bg-white animate-in slide-in-from-bottom duration-300 flex flex-col">
                 <div className="p-4 bg-[#f3f2f1] border-b flex justify-between items-center shrink-0">
@@ -599,7 +706,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     
                     <div className="flex-1 overflow-y-auto p-4 scrollbar-thin bg-white">
                        <div className="grid grid-cols-1 gap-1">
-                          {/* Carpeta para Regresar (Foto 4: Carpeta Azul) */}
                           {currentFolderPath.length > 1 && (
                             <div 
                               onClick={goBackOneDrive}

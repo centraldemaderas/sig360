@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { StandardView } from './components/StandardView';
@@ -13,11 +13,15 @@ import { AreaManager } from './components/AreaManager';
 import { Activity, User, StandardDefinition, Plant, Area } from './types';
 import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
-import { Database } from 'lucide-react';
+import { Database, Loader2 } from 'lucide-react';
 
 /**
- * SIG-Manager Pro - Aplicación Principal
- * Versión de Estabilidad: 1.1.2 (Corrección de diferencias y consultas)
+ * SIG-Manager Pro - Arquitectura Modularizada
+ * Módulos: 
+ * - Dashboard (Control de Mando)
+ * - Operación (Gestión de Normas por grilla)
+ * - Hallazgos (Control de Evidencias)
+ * - Administración (Configuración de Base)
  */
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -27,85 +31,169 @@ function App() {
   const [standards, setStandards] = useState<StandardDefinition[]>([]);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
-  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
-  const [usersLoaded, setUsersLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  const [loadingStates, setLoadingStates] = useState({
+    activities: true,
+    users: true,
+    standards: true,
+    plants: true,
+    areas: true,
+    settings: true
+  });
+
   const [dbError, setDbError] = useState<string | null>(null);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
-  const [currentYear, setCurrentYear] = useState<number>(2025);
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   const [activeView, setActiveView] = useState('dashboard');
 
-  useEffect(() => {
-    if (activitiesLoaded && usersLoaded) setIsLoading(false);
-  }, [activitiesLoaded, usersLoaded]);
+  const isLoading = useMemo(() => Object.values(loadingStates).some(s => s), [loadingStates]);
 
   useEffect(() => {
-    const safetyTimer = setTimeout(() => setIsLoading(false), 5000);
+    // Timer de seguridad para evitar loops infinitos de carga
+    const safetyTimer = setTimeout(() => {
+      setLoadingStates(prev => Object.keys(prev).reduce((acc, k) => ({...acc, [k]: false}), {} as any));
+    }, 10000);
 
-    const unsubscribeActivities = dataService.subscribeToActivities(
-      (data) => { setActivities(data); setActivitiesLoaded(true); if (USE_CLOUD_DB) setIsCloudConnected(true); },
-      (error) => { setActivitiesLoaded(true); if (USE_CLOUD_DB) setIsCloudConnected(false); if (error?.code === 'failed-precondition') setDbError("Falta base de datos."); }
-    );
-
-    const unsubscribeUsers = dataService.subscribeToUsers(data => { setUsers(data); setUsersLoaded(true); });
-    const unsubscribeStandards = dataService.subscribeToStandards(data => setStandards(data));
-    const unsubscribePlants = dataService.subscribeToPlants(data => setPlants(data));
-    const unsubscribeAreas = dataService.subscribeToAreas(data => setAreas(data));
-    const unsubscribeSettings = dataService.subscribeToSettings(data => setCompanyLogo(data?.companyLogo || null));
+    const unsubscribes = [
+      dataService.subscribeToActivities(
+        (data) => { 
+          setActivities(data); 
+          setLoadingStates(s => ({...s, activities: false})); 
+          if (USE_CLOUD_DB) setIsCloudConnected(true); 
+        },
+        (error) => { 
+          setLoadingStates(s => ({...s, activities: false})); 
+          if (error?.code === 'failed-precondition') setDbError("Faltan índices en la base de datos."); 
+        }
+      ),
+      dataService.subscribeToUsers(data => { setUsers(data); setLoadingStates(s => ({...s, users: false})); }),
+      dataService.subscribeToStandards(data => { setStandards(data); setLoadingStates(s => ({...s, standards: false})); }),
+      dataService.subscribeToPlants(data => { setPlants(data); setLoadingStates(s => ({...s, plants: false})); }),
+      dataService.subscribeToAreas(data => { setAreas(data); setLoadingStates(s => ({...s, areas: false})); }),
+      dataService.subscribeToSettings(data => { setCompanyLogo(data?.companyLogo || null); setLoadingStates(s => ({...s, settings: false})); })
+    ];
 
     return () => {
       clearTimeout(safetyTimer);
-      unsubscribeActivities();
-      unsubscribeUsers();
-      unsubscribeStandards();
-      unsubscribePlants();
-      unsubscribeAreas();
-      unsubscribeSettings();
+      unsubscribes.forEach(unsub => unsub());
     };
   }, []);
 
-  const handleUpdateStandard = async (std: StandardDefinition) => await dataService.updateStandard(std);
-  const handleLogoChange = (logo: string | null) => setCompanyLogo(logo);
-  const handleLogin = (user: User) => { setCurrentUser(user); setActiveView('dashboard'); };
-  const handleLogout = () => { setCurrentUser(null); setActiveView('dashboard'); };
-  const handleAddActivity = async (newActivity: Activity) => await dataService.addActivity(newActivity);
-  const handleUpdateActivity = async (updatedActivity: Activity) => await dataService.updateActivity(updatedActivity);
-  const handleDeleteActivity = async (id: string) => { if (window.confirm("¿Está seguro?")) await dataService.deleteActivity(id); };
-  const handleAddUser = async (u: User) => await dataService.addUser(u);
-  const handleUpdateUser = async (u: User) => await dataService.updateUser(u);
-  const handleDeleteUser = async (id: string) => { if (window.confirm("¿Está seguro?")) await dataService.deleteUser(id); };
-  const handleAddPlant = async (p: Plant) => await dataService.addPlant(p);
-  const handleUpdatePlant = async (p: Plant) => await dataService.updatePlant(p);
-  const handleDeletePlant = async (id: string) => { await dataService.deletePlant(id); };
-  const handleAddArea = async (a: Area) => await dataService.addArea(a);
-  const handleUpdateArea = async (a: Area) => await dataService.updateArea(a);
-  const handleDeleteArea = async (id: string) => { await dataService.deleteArea(id); };
-
-  if (isLoading) return <div className="flex h-screen items-center justify-center space-y-4 flex-col"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-700"></div><p>Cargando...</p></div>;
-
-  if (dbError && USE_CLOUD_DB) return <div className="flex h-screen items-center justify-center p-4 text-center flex-col"><Database size={48} className="mb-4 text-red-600" /><h2 className="text-xl font-bold">Error de Conexión</h2><button onClick={() => window.location.reload()} className="mt-4 bg-slate-800 text-white px-6 py-2 rounded-lg">Recargar</button></div>;
-
-  if (!currentUser) return <Login onLogin={handleLogin} companyLogo={companyLogo} users={users} />;
-
-  const renderContent = () => {
-    if (activeView.startsWith('std-')) {
-      const stdType = activeView.replace('std-', '');
-      return <StandardView standard={stdType} activities={activities} areas={areas} onUpdateActivity={handleUpdateActivity} currentYear={currentYear} setCurrentYear={setCurrentYear} currentUser={currentUser} />;
-    }
-    switch (activeView) {
-      case 'dashboard': return <Dashboard activities={activities} areas={areas} plants={plants} />;
-      case 'evidence-dashboard': return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handleUpdateActivity} />;
-      case 'norms': return <StandardManager standards={standards} onUpdateStandard={handleUpdateStandard} currentUser={currentUser} />;
-      case 'requirements': return <RequirementsManager activities={activities} onAdd={handleAddActivity} onUpdate={handleUpdateActivity} onDelete={handleDeleteActivity} standardsList={standards} currentUser={currentUser} areas={areas} />;
-      case 'plants': return <PlantManager plants={plants} onAdd={handleAddPlant} onUpdate={handleUpdatePlant} onDelete={handleDeletePlant} />;
-      case 'areas': return <AreaManager areas={areas} users={users} onAdd={handleAddArea} onUpdate={handleUpdateArea} onDelete={handleDeleteArea} />;
-      case 'users': return <UserManagement users={users} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} areas={areas} />;
-      case 'settings': return <SystemSettings currentLogo={companyLogo} onLogoChange={handleLogoChange} />;
-      default: return <Dashboard activities={activities} areas={areas} plants={plants} />;
+  const handlers = {
+    standard: {
+      update: async (std: StandardDefinition) => await dataService.updateStandard(std),
+    },
+    activity: {
+      add: async (act: Activity) => await dataService.addActivity(act),
+      update: async (act: Activity) => await dataService.updateActivity(act),
+      delete: async (id: string) => { if (window.confirm("¿Confirmar eliminación?")) await dataService.deleteActivity(id); }
+    },
+    user: {
+      add: async (u: User) => await dataService.addUser(u),
+      update: async (u: User) => await dataService.updateUser(u),
+      delete: async (id: string) => { if (window.confirm("¿Eliminar usuario?")) await dataService.deleteUser(id); }
+    },
+    plant: {
+      add: async (p: Plant) => await dataService.addPlant(p),
+      update: async (p: Plant) => await dataService.updatePlant(p),
+      delete: async (id: string) => { await dataService.deletePlant(id); }
+    },
+    area: {
+      add: async (a: Area) => await dataService.addArea(a),
+      update: async (a: Area) => await dataService.updateArea(a),
+      delete: async (id: string) => { await dataService.deleteArea(id); }
     }
   };
 
-  return <Layout activeView={activeView} setActiveView={setActiveView} currentUser={currentUser} onLogout={handleLogout} companyLogo={companyLogo} isCloudConnected={isCloudConnected} standards={standards}>{renderContent()}</Layout>;
+  const handleLogin = (user: User) => { setCurrentUser(user); setActiveView('dashboard'); };
+  const handleLogout = () => { setCurrentUser(null); setActiveView('dashboard'); };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center space-y-4 flex-col bg-slate-50">
+        <Loader2 className="animate-spin h-12 w-12 text-red-700" />
+        <div className="text-center">
+          <p className="font-black text-slate-800 uppercase tracking-widest text-sm">Sincronizando Sistema</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 italic">Cargando Módulos Independientes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (dbError && USE_CLOUD_DB) {
+    return (
+      <div className="flex h-screen items-center justify-center p-8 text-center flex-col bg-white">
+        <Database size={64} className="mb-6 text-red-600 animate-pulse" />
+        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Error de Conexión</h2>
+        <p className="text-slate-500 mt-2 max-w-md font-medium">{dbError}</p>
+        <button onClick={() => window.location.reload()} className="mt-8 bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Reintentar</button>
+      </div>
+    );
+  }
+
+  if (!currentUser) return <Login onLogin={handleLogin} companyLogo={companyLogo} users={users} />;
+
+  const renderModule = () => {
+    // Inyección de Módulos Dinámicos (Normas)
+    if (activeView.startsWith('std-')) {
+      const stdType = activeView.replace('std-', '');
+      return (
+        <StandardView 
+          standard={stdType} 
+          activities={activities} 
+          areas={areas} 
+          onUpdateActivity={handlers.activity.update} 
+          currentYear={currentYear} 
+          setCurrentYear={setCurrentYear} 
+          currentUser={currentUser} 
+        />
+      );
+    }
+
+    // Módulos Independientes
+    switch (activeView) {
+      case 'dashboard': 
+        return <Dashboard activities={activities} areas={areas} plants={plants} />;
+      
+      case 'evidence-dashboard': 
+        return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handlers.activity.update} />;
+      
+      case 'norms': 
+        return <StandardManager standards={standards} onUpdateStandard={handlers.standard.update} currentUser={currentUser} />;
+      
+      case 'requirements': 
+        return <RequirementsManager activities={activities} onAdd={handlers.activity.add} onUpdate={handlers.activity.update} onDelete={handlers.activity.delete} standardsList={standards} currentUser={currentUser} areas={areas} />;
+      
+      case 'plants': 
+        return <PlantManager plants={plants} onAdd={handlers.plant.add} onUpdate={handlers.plant.update} onDelete={handlers.plant.delete} />;
+      
+      case 'areas': 
+        return <AreaManager areas={areas} users={users} onAdd={handlers.area.add} onUpdate={handlers.area.update} onDelete={handlers.area.delete} />;
+      
+      case 'users': 
+        return <UserManagement users={users} onAddUser={handlers.user.add} onUpdateUser={handlers.user.update} onDeleteUser={handlers.user.delete} areas={areas} />;
+      
+      case 'settings': 
+        return <SystemSettings currentLogo={companyLogo} onLogoChange={(logo) => setCompanyLogo(logo)} />;
+      
+      default: 
+        return <Dashboard activities={activities} areas={areas} plants={plants} />;
+    }
+  };
+
+  return (
+    <Layout 
+      activeView={activeView} 
+      setActiveView={setActiveView} 
+      currentUser={currentUser} 
+      onLogout={handleLogout} 
+      companyLogo={companyLogo} 
+      isCloudConnected={isCloudConnected} 
+      standards={standards}
+    >
+      {renderModule()}
+    </Layout>
+  );
 }
 
 export default App;
