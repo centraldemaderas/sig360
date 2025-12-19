@@ -43,6 +43,18 @@
 </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
+    <!-- Cambiado a ruta relativa para que funcione tras el build -->
+    <script type="module" src="index.js"></script>
+    <script type="module">
+      // Fallback para desarrollo: si index.js no existe, intenta cargar index.tsx
+      fetch('index.js').then(r => {
+        if (!r.ok) {
+          const s = document.createElement('script');
+          s.type = 'module';
+          s.src = './index.tsx';
+          document.body.appendChild(s);
+        }
+      });
+    </script>
   </body>
 </html>
