@@ -1,8 +1,8 @@
 {
   "name": "SIG-Manager Pro (Cloud Ready)",
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "status": "PRODUCTION_READY",
-  "developerNotes": "v1.4.4: Limpieza de importmap (módulos Node eliminados). El nombre del proyecto se ajustó a 'sig-manager-pro'. Se recomienda renombrar el repo en GitHub y recrear el backend en App Hosting para corregir el formato de enlace de recurso git.",
+  "developerNotes": "v1.4.5: Browser-Native Clean. Se eliminaron todos los módulos de Node del frontend. El error 'git repository link name' persiste debido a un desajuste en el recurso de Google Cloud: se recomienda borrar el backend en Firebase Console y crearlo nuevamente apuntando al nuevo nombre del repositorio para regenerar el enlace 'projects/*/locations/*/connections/*/gitRepositoryLinks/*'.",
   "requestFramePermissions": []
 }
