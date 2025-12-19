@@ -7,7 +7,7 @@
     <title>SIG-Manager Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
       body {
         font-family: 'Inter', sans-serif;
         background-color: #f8fafc;
@@ -23,6 +23,9 @@
       .scrollbar-thin::-webkit-scrollbar-thumb {
         background: #cbd5e1;
         border-radius: 3px;
+      }
+      .pdf-shadow {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
       }
     </style>
   <script type="importmap">
@@ -40,12 +43,13 @@
     "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js",
     "firebase/storage": "https://www.gstatic.com/firebasejs/11.0.2/firebase-storage.js",
     "xlsx": "https://esm.sh/xlsx@0.18.5",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@4.8.62",
     "firebase/": "https://esm.sh/firebase@^12.7.0/",
     "vitest/": "https://esm.sh/vitest@^4.0.16/",
     "vitest": "https://esm.sh/vitest@^4.0.16",
+    "express": "https://esm.sh/express@^5.2.1",
     "path": "https://esm.sh/path@^0.12.7",
-    "url": "https://esm.sh/url@^0.11.4",
-    "express": "https://esm.sh/express@^5.2.1"
+    "url": "https://esm.sh/url@^0.11.4"
   }
 }
 </script>
