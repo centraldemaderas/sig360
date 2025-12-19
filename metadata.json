@@ -3,6 +3,6 @@
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
   "version": "1.4.4",
   "status": "PRODUCTION_READY",
-  "developerNotes": "v1.4.4: Importmap saneado (Node modules removed). Se valida que el backend de App Hosting requiere el formato de conexión: 'projects/*/locations/*/connections/*/gitRepositoryLinks/*'. Configuración lista para re-vinculación en consola.",
+  "developerNotes": "v1.4.4: Limpieza de importmap (módulos Node eliminados). El nombre del proyecto se ajustó a 'sig-manager-pro'. Se recomienda renombrar el repo en GitHub y recrear el backend en App Hosting para corregir el formato de enlace de recurso git.",
   "requestFramePermissions": []
 }
