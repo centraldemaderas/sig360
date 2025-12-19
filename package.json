@@ -1,7 +1,6 @@
-
 {
   "name": "sig360",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,7 +8,7 @@
   },
   "scripts": {
     "dev": "npx serve .",
-    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node --input-type=module -e \"import fs from 'node:fs'; const h=fs.readFileSync('dist/index.html','utf8'); fs.writeFileSync('dist/index.html', h.replace('index.tsx','index.js'))\"",
+    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node --input-type=module -e \"import fs from 'node:fs'; const path='dist/index.html'; const h=fs.readFileSync(path,'utf8'); fs.writeFileSync(path, h.replace('index.tsx','index.js'))\"",
     "start": "node server.js"
   },
   "dependencies": {
