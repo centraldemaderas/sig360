@@ -1,3 +1,4 @@
+
 import { db, USE_CLOUD_DB } from '../firebaseConfig';
 import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, where } from 'firebase/firestore';
 import { Activity, User, StandardDefinition, AppSettings, Notification, Plant, Area } from '../types';
@@ -23,35 +24,50 @@ class DataService {
 
   subscribeToActivities(onUpdate: (data: Activity[]) => void, onError?: (error: any) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(collection(db, COLL_ACTIVITIES), 
-        (snap) => {
-          const acts = snap.docs.map(d => ({ ...d.data(), id: d.id, plantIds: this.cleanPlantIds((d.data() as any).plantIds) } as Activity));
-          onUpdate(acts);
-        },
-        (error) => { console.error("Error Actividades:", error); if (onError) onError(error); }
-      );
+      try {
+        return onSnapshot(collection(db, COLL_ACTIVITIES), 
+          (snap) => {
+            const acts = snap.docs.map(d => ({ ...d.data(), id: d.id, plantIds: this.cleanPlantIds((d.data() as any).plantIds) } as Activity));
+            onUpdate(acts);
+          },
+          (error) => { 
+            console.error("Error Actividades Firebase:", error); 
+            this.loadLocalActivities(onUpdate);
+            if (onError) onError(error); 
+          }
+        );
+      } catch (e) {
+        console.error("Firestore no disponible:", e);
+        return this.loadLocalActivities(onUpdate);
+      }
     } else {
-      const load = () => {
-        const saved = localStorage.getItem('app_activities');
-        onUpdate(saved ? JSON.parse(saved) : MOCK_ACTIVITIES_GERENCIA);
-      };
-      load();
-      window.addEventListener('local-data-changed', load);
-      return () => window.removeEventListener('local-data-changed', load);
+      return this.loadLocalActivities(onUpdate);
     }
+  }
+
+  private loadLocalActivities(onUpdate: (data: Activity[]) => void) {
+    const load = () => {
+      const saved = localStorage.getItem('app_activities');
+      onUpdate(saved ? JSON.parse(saved) : MOCK_ACTIVITIES_GERENCIA);
+    };
+    load();
+    window.addEventListener('local-data-changed', load);
+    return () => window.removeEventListener('local-data-changed', load);
   }
 
   subscribeToNotifications(userId: string, onUpdate: (data: Notification[]) => void) {
     if (USE_CLOUD_DB && db) {
-      // FIX: Solo filtro básico para evitar errores de 'failed-precondition'
-      const q = query(collection(db, COLL_NOTIFICATIONS), where('userId', '==', userId));
-      return onSnapshot(q, (snap) => {
-        const notifs = snap.docs.map(d => ({ ...d.data(), id: d.id } as Notification));
-        notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        onUpdate(notifs.slice(0, 50));
-      }, (err) => {
-        console.error("Error Notificaciones:", err);
-      });
+      try {
+        const q = query(collection(db, COLL_NOTIFICATIONS), where('userId', '==', userId));
+        return onSnapshot(q, (snap) => {
+          const notifs = snap.docs.map(d => ({ ...d.data(), id: d.id } as Notification));
+          notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          onUpdate(notifs.slice(0, 50));
+        }, (err) => {
+          console.error("Error Notificaciones Firebase:", err);
+          onUpdate([]);
+        });
+      } catch (e) { return () => {}; }
     } else {
       const load = () => {
         const saved = localStorage.getItem(`notifs_${userId}`);
@@ -65,25 +81,33 @@ class DataService {
 
   subscribeToUsers(onUpdate: (data: User[]) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(collection(db, COLL_USERS), (snap) => {
-        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as User)));
-      });
+      try {
+        return onSnapshot(collection(db, COLL_USERS), (snap) => {
+          onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as User)));
+        }, () => this.loadLocalUsers(onUpdate));
+      } catch (e) { return this.loadLocalUsers(onUpdate); }
     } else {
-      const load = () => {
-        const saved = localStorage.getItem('app_users');
-        onUpdate(saved ? JSON.parse(saved) : MOCK_USERS);
-      };
-      load();
-      window.addEventListener('local-data-changed', load);
-      return () => window.removeEventListener('local-data-changed', load);
+      return this.loadLocalUsers(onUpdate);
     }
+  }
+
+  private loadLocalUsers(onUpdate: (data: User[]) => void) {
+    const load = () => {
+      const saved = localStorage.getItem('app_users');
+      onUpdate(saved ? JSON.parse(saved) : MOCK_USERS);
+    };
+    load();
+    window.addEventListener('local-data-changed', load);
+    return () => window.removeEventListener('local-data-changed', load);
   }
 
   subscribeToPlants(onUpdate: (data: Plant[]) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(collection(db, COLL_PLANTS), (snap) => {
-        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Plant)));
-      });
+      try {
+        return onSnapshot(collection(db, COLL_PLANTS), (snap) => {
+          onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Plant)));
+        }, () => onUpdate([]));
+      } catch (e) { onUpdate([]); return () => {}; }
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_plants');
@@ -97,9 +121,11 @@ class DataService {
 
   subscribeToAreas(onUpdate: (data: Area[]) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(collection(db, COLL_AREAS), (snap) => {
-        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Area)));
-      });
+      try {
+        return onSnapshot(collection(db, COLL_AREAS), (snap) => {
+          onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Area)));
+        }, () => onUpdate([]));
+      } catch (e) { onUpdate([]); return () => {}; }
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_areas');
@@ -113,9 +139,11 @@ class DataService {
 
   subscribeToStandards(onUpdate: (data: StandardDefinition[]) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(collection(db, COLL_STANDARDS), (snap) => {
-        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as StandardDefinition)));
-      });
+      try {
+        return onSnapshot(collection(db, COLL_STANDARDS), (snap) => {
+          onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as StandardDefinition)));
+        }, () => onUpdate([]));
+      } catch (e) { onUpdate([]); return () => {}; }
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_standards');
@@ -129,9 +157,11 @@ class DataService {
 
   subscribeToSettings(onUpdate: (data: AppSettings) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), (d) => {
-        onUpdate(d.exists() ? (d.data() as AppSettings) : { companyLogo: null });
-      });
+      try {
+        return onSnapshot(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), (d) => {
+          onUpdate(d.exists() ? (d.data() as AppSettings) : { companyLogo: null });
+        }, () => onUpdate({ companyLogo: null }));
+      } catch (e) { onUpdate({ companyLogo: null }); return () => {}; }
     } else {
       const load = () => onUpdate({ companyLogo: localStorage.getItem('company_logo') });
       load();

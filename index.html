@@ -28,13 +28,19 @@
   <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "react": "https://esm.sh/react@19.0.0",
+    "react/": "https://esm.sh/react@19.0.0/",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react",
+    "recharts": "https://esm.sh/recharts@2.13.0?external=react",
+    "firebase/app": "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js",
+    "firebase/storage": "https://www.gstatic.com/firebasejs/11.0.2/firebase-storage.js",
     "xlsx": "https://esm.sh/xlsx@0.18.5",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
     "vitest/": "https://esm.sh/vitest@^4.0.16/",
     "vitest": "https://esm.sh/vitest@^4.0.16"
   }
@@ -43,18 +49,6 @@
 </head>
   <body>
     <div id="root"></div>
-    <!-- Cambiado a ruta relativa para que funcione tras el build -->
-    <script type="module" src="index.js"></script>
-    <script type="module">
-      // Fallback para desarrollo: si index.js no existe, intenta cargar index.tsx
-      fetch('index.js').then(r => {
-        if (!r.ok) {
-          const s = document.createElement('script');
-          s.type = 'module';
-          s.src = './index.tsx';
-          document.body.appendChild(s);
-        }
-      });
-    </script>
+    <script type="module" src="index.tsx"></script>
   </body>
 </html>
