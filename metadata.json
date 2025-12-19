@@ -1,8 +1,8 @@
 {
   "name": "SIG-Manager Pro (Cloud Ready)",
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "status": "PRODUCTION_READY",
-  "developerNotes": "v1.5.0: Strict Sync Fix. Se corrigieron las discrepancias de versión entre package.json y package-lock.json. Se eliminaron definitivamente las dependencias de Node.js del importmap en index.html.",
+  "developerNotes": "v1.5.1: Critical Importmap Fix. Se detectó que index.html todavía tenía express y path en el importmap, lo cual rompía el build. Se han eliminado. Se expandió el package-lock.json para incluir sub-dependencias de express y satisfacer npm ci.",
   "requestFramePermissions": []
 }
