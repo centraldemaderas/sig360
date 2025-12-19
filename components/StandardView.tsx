@@ -7,9 +7,11 @@ import {
   ShieldCheck, CheckCircle, Info, BookOpen, Target, Factory, Shield, 
   FileUp, ExternalLink, ListChecks, ArrowRight, Layers, MapPin, BadgeCheck,
   TreePine, Upload, Move, Link, Globe, ShieldAlert, Folder, Search,
-  UserCircle, ChevronLeft, Library, Download, Briefcase, Tags, FileSearch, Monitor
+  UserCircle, ChevronLeft, Library, Download, Briefcase, Tags, FileSearch, Monitor,
+  Loader2, TableProperties
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import * as XLSX from 'xlsx';
 
 interface StandardViewProps {
   standard: string;
@@ -62,7 +64,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [adminComment, setAdminComment] = useState('');
   const [uploadTab, setUploadTab] = useState<'FILE' | 'LINK'>('FILE');
   const [externalUrl, setExternalUrl] = useState('');
-  const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
+  const [previewFile, setPreviewFile] = useState<{url: string, name: string, blobUrl?: string} | null>(null);
+  const [excelPreview, setExcelPreview] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // Sincronizar norma seleccionada cuando cambia desde el padre (sidebar)
   useEffect(() => {
@@ -73,10 +77,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [currentFolderPath, setCurrentFolderPath] = useState<string[]>(['root']);
 
-  // Estados para Draggable
+  // Estados para Draggable (Modal de Carga)
   const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+
+  // Estados para Draggable (Modal de Visor/Preview)
+  const [previewModalPos, setPreviewModalPos] = useState({ x: 0, y: 0 });
+  const [isPreviewDragging, setIsPreviewDragging] = useState(false);
+  const previewDragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,23 +94,63 @@ export const StandardView: React.FC<StandardViewProps> = ({
     return () => unsub();
   }, []);
 
+  // Función crítica para convertir Base64 a Blob URL (Visualización Garantizada)
+  const createBlobUrl = (dataUri: string) => {
+    try {
+      if (!dataUri.startsWith('data:')) return dataUri;
+      
+      const parts = dataUri.split(';base64,');
+      const contentType = parts[0].split(':')[1];
+      const raw = window.atob(parts[1]);
+      const rawLength = raw.length;
+      const uInt8Array = new Uint8Array(rawLength);
+
+      for (let i = 0; i < rawLength; ++i) {
+        uInt8Array[i] = raw.charCodeAt(i);
+      }
+
+      const blob = new Blob([uInt8Array], { type: contentType });
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.error("Error creando Blob URL:", e);
+      return dataUri;
+    }
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     dragRef.current.startX = e.clientX - modalPos.x;
     dragRef.current.startY = e.clientY - modalPos.y;
   };
 
+  const handlePreviewMouseDown = (e: React.MouseEvent) => {
+    setIsPreviewDragging(true);
+    previewDragRef.current.startX = e.clientX - previewModalPos.x;
+    previewDragRef.current.startY = e.clientY - previewModalPos.y;
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      setModalPos({
-        x: e.clientX - dragRef.current.startX,
-        y: e.clientY - dragRef.current.startY
-      });
+      if (isDragging) {
+        setModalPos({
+          x: e.clientX - dragRef.current.startX,
+          y: e.clientY - dragRef.current.startY
+        });
+      }
+      if (isPreviewDragging) {
+        setPreviewModalPos({
+          x: e.clientX - previewDragRef.current.startX,
+          y: e.clientY - previewDragRef.current.startY
+        });
+      }
     };
-    const handleMouseUp = () => setIsDragging(false);
+    
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsPreviewDragging(false);
+    };
 
-    if (isDragging) {
+    if (isDragging || isPreviewDragging) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     }
@@ -109,7 +158,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, isPreviewDragging]);
 
   const filteredActivities = useMemo(() => {
     return activities
@@ -170,10 +219,52 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setInfoModalOpen(true);
   };
 
-  const openPreview = (url: string, name: string) => {
-    setPreviewFile({ url, name });
+  const openPreview = async (url: string, name: string) => {
+    setIsPreviewLoading(true);
+    setExcelPreview(null);
+    setPreviewModalPos({ x: 0, y: 0 }); // Reset position when opening
+    const bUrl = createBlobUrl(url);
+    setPreviewFile({ url, name, blobUrl: bUrl });
     setPreviewModalOpen(true);
+
+    // Motor de Previsualización de Excel
+    if (name.toLowerCase().endsWith('.xlsx') || name.toLowerCase().endsWith('.xls')) {
+      try {
+        const response = await fetch(bUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const html = XLSX.utils.sheet_to_html(worksheet);
+        
+        // Estilos para la tabla Excel en el visor
+        const styledHtml = `
+          <style>
+            table { width: 100%; border-collapse: collapse; font-family: 'Inter', sans-serif; font-size: 11px; color: #1e293b; background: white; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; min-width: 100px; }
+            th { background-color: #f8fafc; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; }
+            tr:nth-child(even) { background-color: #f1f5f9; }
+            tr:hover { background-color: #e2e8f0; }
+          </style>
+          ${html}
+        `;
+        setExcelPreview(styledHtml);
+      } catch (e) {
+        console.error("Error renderizando Excel:", e);
+      }
+    }
+    setIsPreviewLoading(false);
   };
+
+  // Limpieza de Blob URLs para evitar fugas de memoria
+  useEffect(() => {
+    return () => {
+      if (previewFile?.blobUrl && previewFile.blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewFile.blobUrl);
+      }
+    };
+  }, [previewFile]);
 
   const handleDownload = (url: string, name: string) => {
     if (!url) return;
@@ -406,6 +497,24 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const activeEvidence = activePlan?.evidence || null;
   const isRejected = activeEvidence?.status === 'REJECTED';
 
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadstart = () => setIsSaving(true);
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          handleEvidenceSubmit('FILE', event.target.result as string, file.name);
+        }
+      };
+      reader.onerror = () => {
+        setIsSaving(false);
+        alert('Error al leer el archivo.');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-8rem)]">
       <div className="p-4 border-b border-slate-200 bg-white space-y-4 shrink-0">
@@ -583,16 +692,17 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     ) : (
                       uploadTab === 'FILE' ? (
                         <div 
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-12 text-center border-3 border-dashed border-slate-200 rounded-[2rem] hover:bg-red-50/30 hover:border-red-400 transition-all cursor-pointer group bg-slate-50/50"
+                          onClick={() => !isSaving && fileInputRef.current?.click()}
+                          className={`p-12 text-center border-3 border-dashed border-slate-200 rounded-[2rem] hover:bg-red-50/30 hover:border-red-400 transition-all cursor-pointer group bg-slate-50/50 ${isSaving ? 'opacity-50 cursor-wait' : ''}`}
                         >
-                          <input type="file" ref={fileInputRef} onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if(f) handleEvidenceSubmit('FILE', 'internal_sig_storage_'+f.name, f.name);
-                          }} className="hidden" />
-                          <Upload size={40} className="mx-auto text-slate-300 mb-4 group-hover:text-red-600 transition-transform group-hover:-translate-y-1" />
+                          <input type="file" ref={fileInputRef} onChange={handleFileInputChange} className="hidden" />
+                          {isSaving ? (
+                            <Loader2 size={40} className="mx-auto text-red-600 mb-4 animate-spin" />
+                          ) : (
+                            <Upload size={40} className="mx-auto text-slate-300 mb-4 group-hover:text-red-600 transition-transform group-hover:-translate-y-1" />
+                          )}
                           <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] group-hover:text-red-700 leading-relaxed">
-                            {isRejected ? 'REINTENTAR CARGA TRAS RECHAZO' : 'CLIC PARA ADJUNTAR EVIDENCIA'}
+                            {isSaving ? 'PROCESANDO ARCHIVO...' : isRejected ? 'REINTENTAR CARGA TRAS RECHAZO' : 'CLIC PARA ADJUNTAR EVIDENCIA'}
                           </p>
                           <p className="text-[8px] text-slate-300 font-bold uppercase mt-2 tracking-widest">PDF, PNG, JPG o XLSX (Máx 20MB)</p>
                         </div>
@@ -793,77 +903,127 @@ export const StandardView: React.FC<StandardViewProps> = ({
         </div>
       )}
       
-      {/* MODAL DE PREVISUALIZACIÓN */}
+      {/* MODAL DE PREVISUALIZACIÓN REDISEÑADO (SOLUCIÓN BLOB URL + MOTOR EXCEL + PDF FIX) */}
       {previewModalOpen && previewFile && (
-        <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[10001] p-4 backdrop-blur-md animate-in fade-in duration-300">
-           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
-              <div className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
-                 <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/40">
-                      <Monitor size={20} className="text-white" />
+        <div className="fixed inset-0 bg-slate-950/95 flex items-center justify-center z-[10001] p-4 backdrop-blur-xl animate-in fade-in duration-300">
+           <div 
+             style={{ transform: `translate(${previewModalPos.x}px, ${previewModalPos.y}px)` }}
+             className="bg-white rounded-[2rem] shadow-2xl w-[95%] max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-white/10 animate-in zoom-in-95 duration-200"
+           >
+              {/* Header del Visor Arrastrable */}
+              <div 
+                onMouseDown={handlePreviewMouseDown}
+                className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0 border-b border-white/5 cursor-move active:cursor-grabbing select-none"
+              >
+                 <div className="flex items-center gap-5">
+                    <div className="p-3 bg-blue-600 rounded-2xl shadow-xl shadow-blue-900/40 group">
+                      <Monitor size={22} className="text-white group-hover:scale-110 transition-transform" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-black uppercase tracking-tight leading-none mb-1">Previsualización de Documento</h3>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest truncate max-w-[400px]">{previewFile.name}</p>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-black uppercase tracking-widest leading-none mb-1.5 flex items-center gap-2">
+                        Visor de Evidencia SIG 
+                        <span className="text-[8px] bg-white/10 px-2 py-0.5 rounded border border-white/10 text-white/50 uppercase tracking-tighter">Renderizado Dinámico HSEQ</span>
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.15em] truncate max-w-[400px]">{previewFile.name}</p>
                     </div>
                  </div>
-                 <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-4">
                     <button 
                       onClick={() => handleDownload(previewFile.url, previewFile.name)}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/30 active:scale-95"
+                      className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/30 active:scale-95"
                     >
-                      <Download size={14} /> Descargar
+                      <Download size={16} /> Descargar Archivo
                     </button>
-                    <button onClick={() => setPreviewModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white border border-transparent hover:border-red-400">
-                      <X size={24} />
+                    <div className="w-px h-8 bg-white/10 mx-2"></div>
+                    <button onClick={() => setPreviewModalOpen(false)} className="p-3 hover:bg-red-600 transition-colors rounded-2xl text-white/50 hover:text-white border border-transparent hover:border-red-400 active:scale-90">
+                      <X size={28} />
                     </button>
                  </div>
               </div>
               
-              <div className="flex-1 bg-slate-100 flex items-center justify-center p-6 overflow-hidden relative">
-                 {/* Lógica de renderizado según extensión (simulada) */}
-                 <div className="w-full h-full bg-white rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center text-center">
-                    {previewFile.name.toLowerCase().endsWith('.pdf') ? (
-                      <div className="w-full h-full flex flex-col">
-                        <div className="flex-1 flex flex-col items-center justify-center space-y-4 opacity-50">
-                          <FileText size={64} className="text-red-600" />
-                          <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">Visualizador de PDF Activo</p>
-                        </div>
-                        {/* Solo cargar el iframe si la URL parece válida, de lo contrario mostrar placeholder */}
-                        {(previewFile.url.startsWith('http') || previewFile.url.startsWith('data:') || previewFile.url.startsWith('/')) ? (
-                          <iframe src={previewFile.url} className="absolute inset-0 w-full h-full border-none" title="PDF Viewer" />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center bg-slate-50 p-10">
-                             <div className="space-y-4">
-                                <AlertCircle size={48} className="mx-auto text-slate-300" />
-                                <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Documento almacenado internamente</p>
-                                <button onClick={() => handleDownload(previewFile.url, previewFile.name)} className="px-6 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">Descargar para ver</button>
-                             </div>
-                          </div>
-                        )}
+              {/* Área de Visualización Real */}
+              <div className="flex-1 bg-slate-800 flex items-center justify-center relative overflow-hidden">
+                 <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
+                 
+                 <div className="w-full h-full flex flex-col items-center justify-center p-0">
+                    {isPreviewLoading ? (
+                      <div className="text-center space-y-4 animate-in fade-in duration-300">
+                         <Loader2 size={64} className="mx-auto text-blue-500 animate-spin" />
+                         <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Preparando visualización segura...</p>
                       </div>
-                    ) : (previewFile.name.toLowerCase().endsWith('.jpg') || previewFile.name.toLowerCase().endsWith('.png')) ? (
-                      <img src={previewFile.url} alt="Previsualización" className="max-w-full max-h-full object-contain p-4" />
-                    ) : (
-                      <div className="space-y-6 max-w-sm">
-                         <div className="p-8 bg-blue-50 rounded-full inline-block mb-2">
-                           <FileSearch size={64} className="text-blue-600" />
+                    ) : excelPreview ? (
+                      /* CASO: EXCEL RENDERIZADO */
+                      <div className="w-full h-full bg-white overflow-auto p-10 scrollbar-thin animate-in slide-in-from-bottom-4 duration-500">
+                         <div className="flex items-center gap-3 mb-8 p-4 bg-green-50 text-green-700 border border-green-200 rounded-2xl max-w-fit shadow-sm">
+                            <TableProperties size={24} />
+                            <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest">Vista Interactiva Excel</p>
+                               <p className="text-[8px] opacity-70 font-bold uppercase tracking-tighter">Hoja de Cálculo SIG Corporativa</p>
+                            </div>
                          </div>
-                         <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-tight">Visualización no disponible para este formato</h4>
-                         <p className="text-xs text-slate-500 font-medium">Este tipo de archivo requiere software externo para su visualización. Utilice el botón superior para descargar el documento original.</p>
+                         <div className="overflow-x-auto shadow-2xl rounded-xl border border-slate-100" dangerouslySetInnerHTML={{ __html: excelPreview }} />
+                      </div>
+                    ) : previewFile.url.startsWith('sig-internal-lib://') ? (
+                      /* Caso: Documento de Biblioteca Interna */
+                      <div className="text-center p-12 bg-white/5 rounded-[3rem] backdrop-blur-md border border-white/10 max-w-lg space-y-6">
+                         <div className="p-8 bg-purple-600/20 text-purple-400 rounded-full inline-block mb-4 shadow-2xl">
+                           <Library size={80} className="animate-pulse" />
+                         </div>
+                         <h4 className="text-xl font-black text-white uppercase tracking-tight">Recurso de Biblioteca Central</h4>
+                         <p className="text-xs text-slate-400 font-medium leading-relaxed">Este documento reside en el almacenamiento centralizado de la organización. El acceso se realiza mediante el sistema de gestión de archivos interno.</p>
+                         <div className="pt-6 flex gap-3">
+                            <button onClick={() => window.open(previewFile.url.replace('sig-internal-lib://view?id=', 'https://docs.google.com/open?id='), '_blank')} className="flex-1 px-8 py-4 bg-purple-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-3">
+                               <ExternalLink size={16} /> Abrir en Biblioteca
+                            </button>
+                         </div>
+                      </div>
+                    ) : (previewFile.name.toLowerCase().endsWith('.pdf') || previewFile.url.startsWith('data:application/pdf')) ? (
+                      /* Caso: PDF Real (FIX: Usando embed para máxima compatibilidad con visor nativo) */
+                      <div className="w-full h-full relative flex items-center justify-center bg-slate-900/50">
+                        <embed 
+                          src={previewFile.blobUrl} 
+                          type="application/pdf" 
+                          className="w-full h-full border-none shadow-2xl" 
+                        />
+                        <div className="absolute top-4 left-4 bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 opacity-0 hover:opacity-100 transition-opacity">
+                           <p className="text-[10px] text-white font-black uppercase tracking-widest">Navegación nativa PDF activa</p>
+                        </div>
+                      </div>
+                    ) : (previewFile.name.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/) || previewFile.url.startsWith('data:image')) ? (
+                      /* Caso: Imagen Real */
+                      <div className="w-full h-full flex items-center justify-center p-8 overflow-auto">
+                        <img 
+                          src={previewFile.blobUrl || previewFile.url} 
+                          alt="Evidencia" 
+                          className="max-w-full max-h-full object-contain rounded-xl shadow-2xl ring-4 ring-white/5 transition-transform hover:scale-[1.02]" 
+                        />
+                      </div>
+                    ) : (
+                      /* Caso: Fallback Formatos No Compatibles Directamente (Word/ZIP) */
+                      <div className="text-center p-12 bg-white/5 rounded-[3rem] backdrop-blur-md border border-white/10 max-w-lg space-y-8">
+                         <div className="p-8 bg-blue-600/20 text-blue-400 rounded-full inline-block mb-4 shadow-2xl">
+                           <FileSearch size={80} />
+                         </div>
+                         <div className="space-y-4">
+                           <h4 className="text-2xl font-black text-white uppercase tracking-tight">Formato Solo Descarga</h4>
+                           <p className="text-xs text-slate-400 font-medium leading-relaxed">Este tipo de archivo (Word o ZIP) requiere una aplicación externa para ser procesado manteniendo su integridad original.</p>
+                         </div>
                          <button 
                           onClick={() => handleDownload(previewFile.url, previewFile.name)}
-                          className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 mx-auto"
+                          className="w-full py-5 bg-white text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl hover:bg-slate-100 transition-all flex items-center justify-center gap-3"
                          >
-                           <Download size={16} /> Descargar Ahora
+                           <Download size={20} /> Descargar Copia Local
                          </button>
                       </div>
                     )}
                  </div>
               </div>
               
-              <div className="p-4 bg-white border-t border-slate-100 flex justify-center text-slate-400">
-                 <p className="text-[9px] font-black uppercase tracking-[0.3em]">Visor de Seguridad Integral SIG - Central de Maderas</p>
+              {/* Footer Informativo */}
+              <div className="p-4 bg-slate-900 border-t border-white/5 flex justify-center text-slate-500 overflow-hidden shrink-0">
+                 <p className="text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">
+                   CONTROL DE SEGURIDAD INTEGRAL SIG • CENTRAL DE MADERAS
+                 </p>
               </div>
            </div>
         </div>

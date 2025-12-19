@@ -1,7 +1,7 @@
 
 {
   "name": "sig360",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,18 +9,16 @@
   },
   "scripts": {
     "dev": "npx serve .",
-    "build": "npx esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && sed -i 's/index.tsx/index.js/g' dist/index.html",
-    "start": "npx serve dist -s -p $PORT"
+    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node -e \"const fs=require('fs'); let h=fs.readFileSync('dist/index.html','utf8'); fs.writeFileSync('dist/index.html', h.replace('index.tsx','index.js'))\"",
+    "start": "node server.js"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "serve": "^14.2.3",
     "lucide-react": "^0.460.0",
     "recharts": "^2.13.0",
-    "firebase": "^11.0.2"
-  },
-  "devDependencies": {
+    "firebase": "^11.0.2",
+    "express": "^4.18.2",
     "esbuild": "^0.24.2",
     "typescript": "^5.7.2"
   }
