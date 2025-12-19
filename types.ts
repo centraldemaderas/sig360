@@ -29,6 +29,8 @@ export interface CommentLog {
   author: string;
   date: string;
   status: EvidenceStatus;
+  fileUrl?: string; // Enlace al archivo de esta versión específica
+  fileName?: string; // Nombre del archivo de esta versión
 }
 
 export interface Notification {

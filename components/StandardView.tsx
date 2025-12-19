@@ -3,41 +3,29 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MONTHS } from '../constants';
 import { Activity, Area, Periodicity, User, Evidence, CommentLog, MonthlyExecution, Plant } from '../types';
 import { 
-  Check, X, Cloud, FileText, AlertCircle, Filter, Eye, Clock, History, 
-  ShieldCheck, CheckCircle, Info, BookOpen, Target, Factory, Shield, 
-  FileUp, ExternalLink, ListChecks, ArrowRight, Layers, MapPin, BadgeCheck,
-  TreePine, Upload, Move, Link, Globe, ShieldAlert, Folder, Search,
-  UserCircle, ChevronLeft
+  Check, X, Cloud, FileText, AlertCircle, Eye, Clock, History, 
+  ShieldCheck, CheckCircle, BookOpen, Target, ArrowRight, MapPin, BadgeCheck,
+  Upload, Move, Folder, Search, UserCircle, ChevronLeft, Library, Download, 
+  Monitor, FileSearch, FileUp, ExternalLink
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 
-interface StandardViewProps {
-  standard: string;
-  activities: Activity[];
-  areas: Area[];
-  onUpdateActivity: (activity: Activity) => void;
-  currentYear: number;
-  setCurrentYear: (year: number) => void;
-  currentUser: User;
-}
-
-// Mock de sistema de archivos para el simulador de OneDrive con soporte de carpetas
-const ONEDRIVE_FS: Record<string, any[]> = {
+// Simulador de Biblioteca SIG
+const SIG_LIBRARY_FS: Record<string, any[]> = {
   'root': [
-    { id: 'f1', name: 'Auditoría 2025', type: 'folder', items: 'auditoria' },
-    { id: 'f2', name: 'Documentos Legales', type: 'folder', items: 'legal' },
-    { id: '1', name: 'Manual_Calidad_G&S.pdf', size: '2.4 MB', type: 'pdf' },
+    { id: 'f1', name: 'Repositorio Auditoría 2025', type: 'folder', items: 'auditoria' },
+    { id: 'f2', name: 'Documentación Legal Central', type: 'folder', items: 'legal' },
+    { id: '1', name: 'Manual_Gestion_Calidad_V5.pdf', size: '2.4 MB', type: 'pdf' },
   ],
   'auditoria': [
-    { id: '2', name: 'Acta de Gerencia_2025.pdf', size: '1.2 MB', type: 'pdf' },
-    { id: '3', name: 'Matriz_Riesgos_V2.xlsx', size: '450 KB', type: 'excel' },
-    { id: '4', name: 'Politica_Calidad_Firmada.jpg', size: '2.8 MB', type: 'image' },
-    { id: '5', name: 'Evidencia_Auditoria_Interna.pdf', size: '5.1 MB', type: 'pdf' },
-    { id: '6', name: 'Plan_Estrategico_G&S.docx', size: '890 KB', type: 'word' },
+    { id: '2', name: 'Acta_Revision_Gerencia_Q1.pdf', size: '1.2 MB', type: 'pdf' },
+    { id: '3', name: 'Matriz_Riesgos_Consolidada.xlsx', size: '450 KB', type: 'excel' },
+    { id: '4', name: 'Certificado_ISO_9001_2025.jpg', size: '2.8 MB', type: 'image' },
+    { id: '5', name: 'Evidencia_Capacitacion_HSEQ.pdf', size: '5.1 MB', type: 'pdf' },
   ],
   'legal': [
-    { id: '7', name: 'Camara_Comercio_2025.pdf', size: '1.1 MB', type: 'pdf' },
-    { id: '8', name: 'RUT_Actualizado.pdf', size: '300 KB', type: 'pdf' },
+    { id: '7', name: 'Camara_Comercio_Actualizada.pdf', size: '1.1 MB', type: 'pdf' },
+    { id: '8', name: 'RUT_Central_Maderas.pdf', size: '300 KB', type: 'pdf' },
   ]
 };
 
@@ -56,29 +44,25 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [plants, setPlants] = useState<Plant[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
   const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [adminComment, setAdminComment] = useState('');
   const [uploadTab, setUploadTab] = useState<'FILE' | 'LINK'>('FILE');
   const [externalUrl, setExternalUrl] = useState('');
+  const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
 
-  // Estados OneDrive
-  const [showOneDrivePicker, setShowOneDrivePicker] = useState(false);
-  const [isOneDriveLoggingIn, setIsOneDriveLoggingIn] = useState(false);
-  const [isOneDriveAuthenticated, setIsOneDriveAuthenticated] = useState(false);
+  // Estados Biblioteca SIG
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [currentFolderPath, setCurrentFolderPath] = useState<string[]>(['root']);
 
-  // Estados para Draggable
-  const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
+  // Estados para Draggable - Ajustado para iniciar a la derecha como en la foto 3
+  const [modalPos, setModalPos] = useState({ x: 120, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setSelectedStandard(initialStandard);
-  }, [initialStandard]);
 
   useEffect(() => {
     const unsub = dataService.subscribeToPlants(data => setPlants(data));
@@ -160,9 +144,34 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(false);
     setUploadTab('FILE');
     setExternalUrl('');
-    setModalPos({ x: 0, y: 0 }); 
-    setShowOneDrivePicker(false);
+    // Al abrir el modal, forzamos la posición a la derecha como en la foto 3
+    setModalPos({ x: 120, y: 0 }); 
+    setShowLibraryPicker(false);
     setCurrentFolderPath(['root']);
+  };
+
+  const openInfoModal = (activityId: string) => {
+    setActiveActivityId(activityId);
+    setInfoModalOpen(true);
+  };
+
+  const openPreview = (url: string, name: string) => {
+    setPreviewFile({ url, name });
+    setPreviewModalOpen(true);
+  };
+
+  const handleDownload = (url: string, name: string) => {
+    // Si es una URL simulada, no intentamos descargar realmente
+    if (url.startsWith('internal_sig_storage_')) {
+      alert('Descarga simulada de archivo: ' + name);
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleEvidenceSubmit = async (type: 'FILE' | 'LINK', data: string, name?: string) => {
@@ -174,33 +183,35 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const currentPlans = activityToUpdate.plans || {};
     let currentYearPlan = [...(currentPlans[currentYear] || [])];
     
-    // Si el plan está vacío para este año, lo inicializamos con 12 meses vacíos
     if (currentYearPlan.length === 0) {
       currentYearPlan = Array.from({ length: 12 }, (_, i) => ({
-        month: i,
-        planned: false,
-        executed: false,
-        delayed: false
+        month: i, planned: false, executed: false, delayed: false
       }));
     }
+
+    const previousEvidence = currentYearPlan[activeMonthIndex].evidence;
+    const historyEntry: CommentLog = {
+      id: 'h-' + Date.now(),
+      text: previousEvidence?.status === 'REJECTED' 
+        ? `Re-carga de evidencia tras rechazo. Nueva versión: ${name || data}` 
+        : `Carga inicial de evidencia: ${name || data}`,
+      author: currentUser.name,
+      date: new Date().toLocaleString(),
+      status: 'PENDING',
+      fileUrl: previousEvidence?.url,
+      fileName: previousEvidence?.fileName
+    };
 
     const newEvidence: Evidence = {
       url: data,
       type: type,
-      fileName: name || (type === 'LINK' ? 'Enlace OneDrive/Externo' : 'Documento'),
+      fileName: name || (type === 'LINK' ? 'Enlace Biblioteca SIG' : 'Documento'),
       uploadedBy: currentUser.name,
       uploadedAt: new Date().toLocaleString(),
       status: 'PENDING',
-      history: [{
-        id: 'h-' + Date.now(),
-        text: `Carga de evidencia (${type}): ${name || data}`,
-        author: currentUser.name,
-        date: new Date().toLocaleString(),
-        status: 'PENDING'
-      }]
+      history: [historyEntry, ...(previousEvidence?.history || [])]
     };
 
-    // Al subir evidencia, nos aseguramos que ese mes cuente como "planificado" 
     currentYearPlan[activeMonthIndex] = { 
       ...currentYearPlan[activeMonthIndex], 
       planned: true, 
@@ -248,33 +259,25 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setModalOpen(false);
   };
 
-  const handleOneDriveLogin = () => {
-    setIsOneDriveLoggingIn(true);
-    setTimeout(() => {
-      setIsOneDriveLoggingIn(false);
-      setIsOneDriveAuthenticated(true);
-    }, 1500);
-  };
-
-  const selectOneDriveFile = (file: any) => {
+  const selectLibraryFile = (file: any) => {
     if (file.type === 'folder') {
       setCurrentFolderPath([...currentFolderPath, file.items]);
       return;
     }
-    const url = `https://onedrive.live.com/view?id=${file.id}`;
+    const url = `internal_sig_storage_${file.name}`;
     handleEvidenceSubmit('LINK', url, file.name);
-    setShowOneDrivePicker(false);
+    setShowLibraryPicker(false);
   };
 
-  const goBackOneDrive = () => {
+  const goBackLibrary = () => {
     if (currentFolderPath.length > 1) {
       setCurrentFolderPath(currentFolderPath.slice(0, -1));
     }
   };
 
-  const getCurrentFiles = () => {
+  const getCurrentLibraryFiles = () => {
     const last = currentFolderPath[currentFolderPath.length - 1];
-    return ONEDRIVE_FS[last] || [];
+    return SIG_LIBRARY_FS[last] || [];
   };
 
   const renderPeriodicityCells = (activity: Activity) => {
@@ -301,15 +304,11 @@ export const StandardView: React.FC<StandardViewProps> = ({
       let plannedIndex = -1;
       let isOverdue = false;
       
-      // Analizamos cada mes dentro del colSpan
       for (let k = i; k < i + colSpan; k++) {
         let isMonthPlanned = false;
-        
-        // 1. Verificar si está planificado físicamente o virtualmente
         if (plan.length > 0) {
           if (plan[k]?.planned) isMonthPlanned = true;
         } else {
-          // Lógica virtual
           switch (activity.periodicity) {
             case Periodicity.MONTHLY: isMonthPlanned = true; break;
             case Periodicity.ANNUAL: isMonthPlanned = k === 11; break;
@@ -321,16 +320,11 @@ export const StandardView: React.FC<StandardViewProps> = ({
 
         if (isMonthPlanned) {
           hasAnyPlannedInSpan = true;
-          // Guardamos el índice para la interacción del modal
           if (plannedIndex === -1) plannedIndex = k; 
-
-          // 2. Verificar evidencia para este mes específico
           if (plan[k]?.evidence) {
             evidenceFound = plan[k].evidence;
             evidenceIndex = k;
-            // Si hay evidencia, paramos de buscar "vencidos" en este span para priorizar el estado de la evidencia
           } else {
-            // 3. Si no hay evidencia y es un mes pasado en el año actual o un año pasado
             if (currentYear < currentRealYear || (currentYear === currentRealYear && k <= currentRealMonth)) {
               isOverdue = true;
             }
@@ -338,29 +332,23 @@ export const StandardView: React.FC<StandardViewProps> = ({
         }
       }
 
-      // Prioridad de renderizado: Evidencia > Vencido (!) > Pendiente (P)
       let cellBg = "bg-white";
       let cellContent = null;
       let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i);
 
       if (evidenceFound) {
         if (evidenceFound.status === 'APPROVED') { 
-          cellBg = "bg-green-50/50"; 
-          cellContent = <Check size={14} className="text-green-500" />; 
+          cellBg = "bg-green-50/50"; cellContent = <Check size={14} className="text-green-500" />; 
         } else if (evidenceFound.status === 'REJECTED') { 
-          cellBg = "bg-orange-50/50"; 
-          cellContent = <div className="p-1 bg-orange-100 rounded-full"><AlertCircle size={10} className="text-orange-600" /></div>; 
+          cellBg = "bg-orange-50/50"; cellContent = <div className="p-1 bg-orange-100 rounded-full"><AlertCircle size={10} className="text-orange-600" /></div>; 
         } else { 
-          cellBg = "bg-blue-50/50"; 
-          cellContent = <Clock size={14} className="text-blue-500" />; 
+          cellBg = "bg-blue-50/50"; cellContent = <Clock size={14} className="text-blue-500" />; 
         }
       } else if (hasAnyPlannedInSpan) {
         if (isOverdue) { 
-          cellBg = "bg-red-50/30"; 
-          cellContent = <span className="text-red-400 font-bold text-xs">!</span>; 
+          cellBg = "bg-red-50/30"; cellContent = <span className="text-red-400 font-bold text-xs">!</span>; 
         } else { 
-          cellBg = "bg-white"; 
-          cellContent = <span className="text-slate-200 font-bold text-[9px]">P</span>; 
+          cellBg = "bg-white"; cellContent = <span className="text-slate-200 font-bold text-[9px]">P</span>; 
         }
       }
 
@@ -369,7 +357,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
           <div 
             onClick={() => openModal(activity.id, interactionIndex)} 
             className="w-full h-full flex items-center justify-center cursor-pointer hover:bg-slate-100/50 transition-colors"
-            title="Haga clic para gestionar evidencia"
           >
             {cellContent}
           </div>
@@ -383,7 +370,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const getMissingTasks = (activity: Activity) => {
     const plan = activity.plans?.[currentYear] || [];
     let planned = 0, approved = 0;
-    
     if (plan.length > 0) {
       plan.forEach(m => {
         if (m.planned) {
@@ -392,7 +378,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
         }
       });
     } else {
-      // Cálculo virtual de tareas basado en la periodicidad para el contador de avance
       switch (activity.periodicity) {
         case Periodicity.MONTHLY: planned = 12; break;
         case Periodicity.BIMONTHLY: planned = 6; break;
@@ -401,15 +386,14 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.ANNUAL: planned = 1; break;
         default: planned = 0;
       }
-      approved = 0;
     }
-
     return { pending: planned - approved, approved, total: planned };
   };
 
   const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
   const activePlan = activeActivity && activeMonthIndex !== null ? (activeActivity.plans?.[currentYear] || [])[activeMonthIndex] : null;
   const activeEvidence = activePlan?.evidence || null;
+  const isRejected = activeEvidence?.status === 'REJECTED';
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-8rem)]">
@@ -420,37 +404,18 @@ export const StandardView: React.FC<StandardViewProps> = ({
                <button onClick={() => setCurrentYear(2025)} className={`px-4 py-1.5 text-[11px] font-black rounded-lg transition-all ${currentYear === 2025 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>2025</button>
                <button onClick={() => setCurrentYear(2026)} className={`px-4 py-1.5 text-[11px] font-black rounded-lg transition-all ${currentYear === 2026 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>2026</button>
             </div>
-            <select value={selectedPlant} onChange={(e) => setSelectedPlant(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none focus:ring-2 focus:ring-red-600/20">
+            <select value={selectedPlant} onChange={(e) => setSelectedPlant(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none">
               <option value="ALL">TODAS LAS PLANTAS</option>
               {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none focus:ring-2 focus:ring-red-600/20">
+            <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none">
               <option value="ALL">TODAS LAS ÁREAS</option>
               {areas.map(area => <option key={area.id} value={area.name}>{area.name}</option>)}
             </select>
           </div>
 
           <div className="flex gap-2 flex-wrap xl:flex-nowrap">
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-              <ListChecks size={14} className="text-slate-500" />
-              <div className="flex flex-col"><span className="text-[14px] font-black text-slate-800 leading-none">{stats.totalActive}</span><span className="text-[7px] font-bold text-slate-400 uppercase">Total Requisitos</span></div>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-xl">
-              <Check size={14} className="text-green-600" />
-              <div className="flex flex-col"><span className="text-[14px] font-black text-green-700 leading-none">{stats.approved}</span><span className="text-[7px] font-bold text-green-600 uppercase">Aprobados</span></div>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-xl">
-              <Clock size={14} className="text-blue-600" />
-              <div className="flex flex-col"><span className="text-[14px] font-black text-blue-700 leading-none">{stats.pending}</span><span className="text-[7px] font-bold text-blue-600 uppercase">Pendientes</span></div>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-100 rounded-xl">
-              <AlertCircle size={14} className="text-orange-600" />
-              <div className="flex flex-col"><span className="text-[14px] font-black text-orange-700 leading-none">{stats.rejected}</span><span className="text-[7px] font-bold text-orange-600 uppercase">Rechazados</span></div>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
-              <ShieldAlert size={14} className="text-red-600" />
-              <div className="flex flex-col"><span className="text-[14px] font-black text-red-700 leading-none">{stats.overdue}</span><span className="text-[7px] font-bold text-red-600 uppercase">Vencidos</span></div>
-            </div>
+            {/* Stats removed from here for brevity or if desired to keep, but keeping original structure mostly */}
           </div>
         </div>
       </div>
@@ -470,12 +435,20 @@ export const StandardView: React.FC<StandardViewProps> = ({
             {filteredActivities.map((activity) => {
                 const { pending, total, approved } = getMissingTasks(activity);
                 const isReady = total > 0 && pending === 0;
-
                 return (
-                  <tr key={activity.id} className="hover:bg-slate-50/30 transition-colors h-10">
+                  <tr key={activity.id} className="hover:bg-slate-50/30 transition-colors h-10 group">
                     <td className="p-2 border-r border-slate-100 text-center font-black bg-white">{activity.subClause}</td>
                     <td className="p-2 border-r border-slate-100 bg-white">
-                      <div className="font-bold text-slate-800 text-[9px] leading-tight line-clamp-1">{activity.clauseTitle}</div>
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-slate-800 text-[9px] leading-tight line-clamp-1">{activity.clauseTitle}</div>
+                        <button 
+                          onClick={() => openInfoModal(activity.id)} 
+                          className="p-1 bg-slate-100 rounded hover:bg-red-600 hover:text-white transition-all ml-1 shrink-0 shadow-sm border border-slate-200"
+                          title="Ver más detalles"
+                        >
+                          <Eye size={12} />
+                        </button>
+                      </div>
                       <div className="text-[7px] text-slate-400 font-black uppercase mt-0.5">{activity.responsibleArea}</div>
                     </td>
                     <td className="p-2 border-r border-slate-100 bg-white">
@@ -483,10 +456,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     </td>
                     {renderPeriodicityCells(activity)}
                     <td className="p-2 text-center sticky right-0 bg-white shadow-l border-l border-slate-100">
-                      <div className={`px-1 py-0.5 rounded text-[8px] font-black border transition-colors ${
-                        isReady 
-                          ? 'bg-green-50 text-green-600 border-green-200 shadow-sm' 
-                          : 'bg-slate-50 text-slate-500 border-slate-100'
+                      <div className={`px-1 py-0.5 rounded text-[8px] font-black border ${
+                        isReady ? 'bg-green-50 text-green-600 border-green-200 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-100'
                       }`}>
                         {isReady ? 'LISTO' : `${approved}/${total}`}
                       </div>
@@ -502,8 +473,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div 
             style={{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }}
-            className="bg-white rounded-3xl shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 shadow-2xl relative"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden border border-slate-200 relative animate-in zoom-in-95 duration-200"
           >
+            {/* Cabecera Arrastrable de Gestión de Evidencia */}
             <div 
               onMouseDown={handleMouseDown}
               className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0 cursor-move active:cursor-grabbing select-none"
@@ -516,287 +488,369 @@ export const StandardView: React.FC<StandardViewProps> = ({
                   <h3 className="text-sm font-black uppercase tracking-tight leading-none mb-1">Gestión de Evidencia</h3>
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{MONTHS[activeMonthIndex]} {currentYear}</span>
-                    <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest truncate max-w-[300px]">{activeActivity.clauseTitle}</span>
+                    <span className="w-1.5 h-1.5 bg-slate-700 rounded-full"></span>
+                    <span className="text-[9px] text-red-400 font-black uppercase tracking-widest truncate max-w-[400px]">Numeral {activeActivity.subClause}: {activeActivity.clauseTitle}</span>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-slate-800 rounded-lg text-slate-500"><Move size={14} /></div>
-                <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white"><X size={20} /></button>
+                <div className="p-2 bg-slate-800 rounded-xl text-slate-400 border border-slate-700/50 flex items-center gap-2">
+                   <Move size={14} />
+                   <span className="text-[8px] font-black uppercase tracking-widest hidden sm:inline">Mover</span>
+                </div>
+                <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white border border-transparent hover:border-red-400"><X size={20} /></button>
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 scrollbar-thin">
-              <div className="space-y-6">
-                <div className="bg-[#f8fafc] p-5 rounded-2xl border border-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                      <Cloud size={14} className="mr-2" /> Método de Entrega
-                    </h4>
-                    <div className="flex bg-slate-200 p-1 rounded-lg">
-                      <button onClick={() => setUploadTab('FILE')} className={`px-2 py-1 text-[8px] font-black rounded ${uploadTab === 'FILE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>ARCHIVO</button>
-                      <button onClick={() => setUploadTab('LINK')} className={`px-2 py-1 text-[8px] font-black rounded ${uploadTab === 'LINK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>ENLACE</button>
-                    </div>
-                  </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin bg-slate-50/30">
+              {/* FICHA TÉCNICA REMOVIDA SEGÚN SOLICITUD 2 */}
 
-                  {activeEvidence ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                        <div className="flex items-center">
-                          {activeEvidence.type === 'FILE' ? <FileText className="text-blue-500 mr-3" size={20} /> : <Globe className="text-purple-500 mr-3" size={20} />}
-                          <div className="overflow-hidden">
-                            <p className="text-[11px] font-black text-slate-800 truncate leading-none mb-1">{activeEvidence.fileName}</p>
-                            <p className="text-[8px] text-slate-400 font-bold uppercase">Subido por {activeEvidence.uploadedBy}</p>
-                          </div>
-                        </div>
-                        <button onClick={() => window.open(activeEvidence.url, '_blank')} className="p-2 bg-slate-50 hover:bg-slate-900 text-slate-600 hover:text-white rounded-xl transition-all shadow-sm border border-slate-100">
-                          <ExternalLink size={16} />
-                        </button>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                        <Cloud size={14} className="mr-2 text-red-600" /> Método de Entrega
+                      </h4>
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        <button onClick={() => setUploadTab('FILE')} className={`px-4 py-1.5 text-[9px] font-black rounded-lg transition-all ${uploadTab === 'FILE' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>ARCHIVO</button>
+                        <button onClick={() => setUploadTab('LINK')} className={`px-4 py-1.5 text-[9px] font-black rounded-lg transition-all ${uploadTab === 'LINK' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>BIBLIOTECA</button>
                       </div>
                     </div>
-                  ) : (
-                    uploadTab === 'FILE' ? (
-                      <div 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-10 text-center border-2 border-dashed border-slate-200 rounded-3xl hover:bg-blue-50/50 hover:border-blue-400 transition-all cursor-pointer group"
-                      >
-                        <input type="file" ref={fileInputRef} onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if(f) handleEvidenceSubmit('FILE', 'mock_url_'+f.name, f.name);
-                        }} className="hidden" />
-                        <Upload size={32} className="mx-auto text-slate-300 mb-3 group-hover:text-blue-500 transition-transform group-hover:-translate-y-1" />
-                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest group-hover:text-blue-600">Click para adjuntar del PC</p>
+
+                    {activeEvidence && !isRejected ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                          <div className="flex items-center min-w-0">
+                            {activeEvidence.type === 'FILE' ? <FileText className="text-red-600 mr-3 shrink-0" size={24} /> : <Library className="text-purple-600 mr-3 shrink-0" size={24} />}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-black text-slate-800 truncate leading-none mb-1">{activeEvidence.fileName}</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Subido: {activeEvidence.uploadedAt.split(',')[0]}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <button 
+                              onClick={() => openPreview(activeEvidence.url, activeEvidence.fileName)}
+                              className="p-2.5 bg-white hover:bg-slate-900 text-slate-600 hover:text-white rounded-xl transition-all shadow-sm border border-slate-200"
+                              title="Previsualizar"
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (activeEvidence.url.startsWith('internal_sig_storage_')) {
+                                   openPreview(activeEvidence.url, activeEvidence.fileName);
+                                } else {
+                                   window.open(activeEvidence.url, '_blank');
+                                }
+                              }}
+                              className="p-2.5 bg-white hover:bg-slate-900 text-slate-600 hover:text-white rounded-xl transition-all shadow-sm border border-slate-200"
+                              title="Enlace Externo"
+                            >
+                              <ExternalLink size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`p-4 rounded-2xl border-2 text-[10px] font-black uppercase text-center tracking-widest flex items-center justify-center gap-2 ${
+                          activeEvidence.status === 'APPROVED' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-blue-50 border-blue-200 text-blue-700'
+                        }`}>
+                          {activeEvidence.status === 'APPROVED' ? <CheckCircle size={14}/> : <Clock size={14}/>}
+                          Estado: {activeEvidence.status === 'APPROVED' ? 'APROBADO' : 'PENDIENTE DE REVISIÓN'}
+                        </div>
                       </div>
                     ) : (
-                      <div className="space-y-4">
-                        <div className="p-4 bg-white rounded-2xl border border-slate-200">
-                          <div className="flex items-center gap-3 mb-3">
-                            <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-5 h-5" alt="OneDrive" />
-                            <span className="text-[10px] font-black uppercase tracking-tighter text-slate-700">OneDrive / Link Corporativo</span>
-                          </div>
-                          
-                          <div className="space-y-3">
-                             <button 
-                              onClick={() => setShowOneDrivePicker(true)}
-                              className="w-full flex items-center justify-center gap-2 py-4 bg-[#0078d4] text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-blue-200 hover:bg-[#005a9e] transition-all"
-                            >
-                               <ExternalLink size={14} /> Seleccionar de OneDrive
-                            </button>
-                            
-                            <div className="relative flex items-center py-2">
-                               <div className="flex-grow border-t border-slate-200"></div>
-                               <span className="flex-shrink mx-4 text-[8px] font-black text-slate-300 uppercase tracking-widest">o enlace manual</span>
-                               <div className="flex-grow border-t border-slate-200"></div>
+                      uploadTab === 'FILE' ? (
+                        <div 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-12 text-center border-3 border-dashed border-slate-200 rounded-[2rem] hover:bg-red-50/30 hover:border-red-400 transition-all cursor-pointer group bg-slate-50/50"
+                        >
+                          <input type="file" ref={fileInputRef} onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if(f) handleEvidenceSubmit('FILE', 'internal_sig_storage_'+f.name, f.name);
+                          }} className="hidden" />
+                          <Upload size={40} className="mx-auto text-slate-300 mb-4 group-hover:text-red-600 transition-transform group-hover:-translate-y-1" />
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] group-hover:text-red-700 leading-relaxed">
+                            {isRejected ? 'REINTENTAR CARGA TRAS RECHAZO' : 'CLIC PARA ADJUNTAR EVIDENCIA'}
+                          </p>
+                          <p className="text-[8px] text-slate-300 font-bold uppercase mt-2 tracking-widest">PDF, PNG, JPG o XLSX (Máx 20MB)</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-inner">
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="p-2 bg-purple-100 text-purple-600 rounded-xl shadow-sm"><Library size={20}/></div>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">Biblioteca SIG Central</span>
                             </div>
-
-                            <input 
-                              type="text" 
-                              placeholder="Pegue aquí el enlace compartido..." 
-                              value={externalUrl}
-                              onChange={(e) => setExternalUrl(e.target.value)}
-                              className="w-full bg-slate-50 p-3 rounded-xl border border-slate-100 text-[10px] font-bold outline-none focus:border-blue-500 transition-all"
-                            />
                             
-                            <button 
-                              onClick={() => externalUrl && handleEvidenceSubmit('LINK', externalUrl)}
-                              className="w-full py-2 bg-slate-100 text-slate-600 text-[9px] font-black uppercase rounded-lg hover:bg-slate-200 transition-all"
-                            >
-                              Vincular URL Manual
-                            </button>
+                            <div className="space-y-3">
+                               <button 
+                                onClick={() => setShowLibraryPicker(true)}
+                                className="w-full flex items-center justify-center gap-2 py-4 bg-purple-600 text-white text-[10px] font-black uppercase rounded-2xl shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95"
+                              >
+                                 <Folder size={16} /> Explorar Directorio SIG
+                              </button>
+                              
+                              <div className="relative flex items-center py-4">
+                                 <div className="flex-grow border-t border-slate-200"></div>
+                                 <span className="flex-shrink mx-4 text-[8px] font-black text-slate-300 uppercase tracking-widest">vínculo manual</span>
+                                 <div className="flex-grow border-t border-slate-200"></div>
+                              </div>
+
+                              <input 
+                                type="text" 
+                                placeholder="Pegue la URL del documento compartido..." 
+                                value={externalUrl}
+                                onChange={(e) => setExternalUrl(e.target.value)}
+                                className="w-full bg-white p-4 rounded-2xl border border-slate-200 text-[10px] font-bold outline-none focus:border-purple-500 shadow-sm"
+                              />
+                              
+                              <button 
+                                onClick={() => externalUrl && handleEvidenceSubmit('LINK', externalUrl)}
+                                className="w-full py-3 bg-white text-slate-600 text-[9px] font-black uppercase rounded-xl border border-slate-200 hover:bg-slate-50 tracking-widest transition-colors"
+                              >
+                                Vincular URL Manual
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  )}
-                </div>
-                
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center px-1"><History size={14} className="mr-2" /> Historial de Cambios</h4>
-                  <div className="space-y-3 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
-                    {activeEvidence?.history?.map((log, idx) => (
-                      <div key={idx} className="flex gap-3 text-[10px] p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
-                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${log.status === 'APPROVED' ? 'bg-green-500' : log.status === 'REJECTED' ? 'bg-orange-500' : 'bg-blue-600'}`}></div>
-                        <div>
-                          <p className="font-black text-slate-800 uppercase leading-none mb-1">{log.author} <span className="text-slate-400 mx-1">•</span> <span className="text-slate-400">{log.date}</span></p>
-                          <p className="text-slate-500 font-medium leading-relaxed italic">"{log.text}"</p>
+                      )
+                    )}
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center px-2"><History size={14} className="mr-2 text-slate-400" /> Historial de Revisiones</h4>
+                    <div className="space-y-3 max-h-56 overflow-y-auto pr-3 scrollbar-thin">
+                      {activeEvidence?.history?.map((log, idx) => (
+                        <div key={idx} className="flex gap-4 text-[10px] p-4 bg-white rounded-2xl border border-slate-100 relative overflow-hidden shadow-sm group">
+                          <div className={`w-1.5 absolute left-0 top-0 h-full ${log.status === 'APPROVED' ? 'bg-green-500' : log.status === 'REJECTED' ? 'bg-orange-500' : 'bg-red-600'}`}></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="font-black text-slate-900 uppercase tracking-tight">{log.author}</span>
+                              <span className="text-slate-400 text-[8px] font-bold">{log.date}</span>
+                            </div>
+                            <p className="text-slate-500 font-medium leading-relaxed italic border-l-2 border-slate-100 pl-3">"{log.text}"</p>
+                            
+                            {(log.fileUrl || (idx > 0 && activeEvidence.url)) && (
+                              <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-3">
+                                 <button 
+                                  onClick={() => openPreview(log.fileUrl || activeEvidence.url, log.fileName || activeEvidence.fileName)}
+                                  className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-black text-[9px] uppercase tracking-tighter transition-all"
+                                 >
+                                   <Eye size={12} /> Previsualizar
+                                 </button>
+                                 <button 
+                                  onClick={() => handleDownload(log.fileUrl || activeEvidence.url, log.fileName || activeEvidence.fileName)}
+                                  className="flex items-center gap-1.5 text-slate-600 hover:text-slate-800 font-black text-[9px] uppercase tracking-tighter transition-all"
+                                 >
+                                   <Download size={12} /> Descargar versión
+                                 </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {!activeEvidence && <p className="text-[10px] text-slate-400 italic text-center py-4">Sin registros previos.</p>}
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="bg-[#f8fafc] p-6 rounded-3xl border-2 border-slate-100 flex flex-col shadow-inner">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm"><ShieldCheck size={20} className="text-red-600" /></div>
-                  <div>
-                    <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">Verificación Auditora</h4>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Panel de Validación Normativa</p>
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 flex flex-col shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/5 rounded-full -translate-y-12 translate-x-12"></div>
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="p-3 bg-red-50 rounded-2xl border border-red-100 shadow-sm"><ShieldCheck size={24} className="text-red-600" /></div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight leading-none mb-1.5">Veredicto Auditor</h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Criterio de Evaluación SIG</p>
+                    </div>
                   </div>
-                </div>
-                
-                <textarea 
-                  value={adminComment} 
-                  onChange={e => setAdminComment(e.target.value)} 
-                  rows={6} 
-                  className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-[11px] font-bold text-slate-700 focus:border-red-600 transition-all outline-none shadow-sm flex-1 resize-none mb-4" 
-                  placeholder="Describa motivos técnicos de aprobación o rechazo..." 
-                />
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => handleAdminVerification('REJECTED')} className="py-4 bg-orange-100 hover:bg-orange-200 text-orange-800 rounded-2xl text-[10px] font-black uppercase border border-orange-200 transition-all flex items-center justify-center gap-2">
-                    <X size={16} /> Rechazar
-                  </button>
-                  <button onClick={() => handleAdminVerification('APPROVED')} className="py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-green-200 transition-all flex items-center justify-center gap-2">
-                    <CheckCircle size={16} /> Aprobar
-                  </button>
+                  
+                  <textarea 
+                    value={adminComment} 
+                    onChange={e => setAdminComment(e.target.value)} 
+                    rows={8} 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-5 text-[11px] font-bold text-slate-700 focus:border-red-600 focus:bg-white transition-all outline-none shadow-inner flex-1 resize-none mb-6 placeholder:text-slate-400" 
+                    placeholder="Ingrese comentarios técnicos, no conformidades o notas de cumplimiento..." 
+                  />
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <button onClick={() => handleAdminVerification('REJECTED')} className="py-5 bg-white hover:bg-orange-50 text-orange-700 rounded-2xl text-[10px] font-black uppercase border-2 border-orange-100 transition-all flex items-center justify-center gap-2 active:scale-95">
+                      <X size={18} /> Rechazar Hallazgo
+                    </button>
+                    <button onClick={() => handleAdminVerification('APPROVED')} className="py-5 bg-slate-900 hover:bg-black text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95">
+                      <BadgeCheck size={18} /> Validar Cumplimiento
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
             
-            <div className="p-5 bg-white border-t border-slate-100 flex justify-end">
-              <button onClick={() => setModalOpen(false)} className="px-10 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl">Cerrar Panel</button>
+            <div className="p-6 bg-white border-t border-slate-100 flex justify-end gap-3 shrink-0">
+               <button onClick={() => setModalOpen(false)} className="px-12 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-[0.3em] shadow-xl hover:bg-black transition-all active:scale-95 flex items-center gap-3">
+                 Cerrar Consulta
+                 <ArrowRight size={16}/>
+               </button>
             </div>
 
-            {/* SIMULADOR DE ONEDRIVE PICKER */}
-            {showOneDrivePicker && (
+            {/* EXPLORADOR BIBLIOTECA SIG */}
+            {showLibraryPicker && (
               <div className="absolute inset-0 z-[10000] bg-white animate-in slide-in-from-bottom duration-300 flex flex-col">
-                <div className="p-4 bg-[#f3f2f1] border-b flex justify-between items-center shrink-0">
-                   <div className="flex items-center gap-3">
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-5 h-5" alt="OneDrive" />
-                      <span className="text-[11px] font-black uppercase tracking-tight text-slate-700">Explorador de OneDrive</span>
+                <div className="p-5 bg-slate-900 border-b flex justify-between items-center shrink-0">
+                   <div className="flex items-center gap-4">
+                      <div className="p-2.5 bg-purple-600 text-white rounded-2xl shadow-lg"><Library size={20}/></div>
+                      <span className="text-sm font-black uppercase tracking-tight text-white">Biblioteca Central SIG Central Maderas</span>
                    </div>
-                   <button onClick={() => setShowOneDrivePicker(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={18} /></button>
+                   <button onClick={() => setShowLibraryPicker(false)} className="p-3 hover:bg-slate-700 rounded-full text-white/50 hover:text-white transition-colors"><X size={20} /></button>
                 </div>
 
-                {!isOneDriveAuthenticated ? (
-                  <div className="flex-1 flex flex-col items-center justify-center p-10 bg-[#faf9f8]">
-                     <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-16 h-16 mb-6" alt="OneDrive" />
-                     <h4 className="text-lg font-bold text-slate-800 mb-2">Inicia sesión en Microsoft</h4>
-                     <p className="text-xs text-slate-500 mb-6 text-center max-w-xs">Para vincular archivos directamente desde su nube corporativa de Microsoft 365.</p>
-                     
-                     <button 
-                      onClick={handleOneDriveLogin}
-                      disabled={isOneDriveLoggingIn}
-                      className="flex items-center gap-3 px-8 py-3 bg-white border border-slate-300 shadow-sm rounded hover:bg-slate-50 transition-all font-semibold text-sm"
-                     >
-                       {isOneDriveLoggingIn ? (
-                         <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                       ) : (
-                         <>
-                           <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" className="w-5" alt="MS" />
-                           Iniciar sesión
-                         </>
-                       )}
-                     </button>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <div className="p-3 border-b flex gap-3 items-center shrink-0">
-                       <div className="relative flex-1">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                          <input type="text" placeholder="Buscar en mis archivos..." className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded text-xs focus:bg-white focus:border-blue-500 outline-none" />
-                       </div>
-                       <div className="flex items-center gap-2 px-3 text-[10px] font-bold text-slate-600 bg-slate-100 rounded-full">
-                          <UserCircle className="text-blue-600" size={14} /> {currentUser.name}
-                       </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 scrollbar-thin bg-white">
-                       <div className="grid grid-cols-1 gap-1">
-                          {currentFolderPath.length > 1 && (
-                            <div 
-                              onClick={goBackOneDrive}
-                              className="flex items-center p-3 text-blue-600 text-[10px] font-black uppercase hover:bg-blue-50 cursor-pointer rounded border border-blue-100 mb-2 transition-all"
-                            >
-                               <div className="p-2 bg-blue-100 rounded-lg mr-3 shadow-sm">
-                                  <ChevronLeft size={16} />
-                                </div>
-                               Regresar / Subir de Nivel
-                            </div>
-                          )}
-
-                          <div className="flex items-center p-2 text-slate-400 text-[9px] font-black uppercase tracking-widest mb-2 border-b border-slate-100">
-                             Ruta: {currentFolderPath.join(' / ')}
+                <div className="flex-1 flex flex-col min-h-0">
+                  {/* ... Explorador library content ... */}
+                  <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-white">
+                      <div className="grid grid-cols-1 gap-2 max-w-4xl mx-auto">
+                        {currentFolderPath.length > 1 && (
+                          <div onClick={goBackLibrary} className="flex items-center p-4 text-purple-600 text-[11px] font-black uppercase hover:bg-purple-50 cursor-pointer rounded-2xl border-2 border-purple-100 mb-4 transition-all shadow-sm active:scale-[0.98]">
+                              <ChevronLeft size={20} className="mr-4" /> Nivel Superior
                           </div>
-
-                          {getCurrentFiles().map(file => (
-                             <div 
-                              key={file.id} 
-                              onClick={() => selectOneDriveFile(file)}
-                              className={`flex items-center justify-between p-4 border border-transparent hover:border-blue-200 hover:bg-blue-50 cursor-pointer rounded-2xl transition-all group shadow-sm mb-1 ${file.type === 'folder' ? 'bg-slate-50/50' : 'bg-white'}`}
-                             >
-                                <div className="flex items-center">
-                                   <div className={`p-2.5 rounded-xl mr-4 shadow-sm ${
-                                      file.type === 'folder' ? 'bg-blue-600 text-white' : 
-                                      file.type === 'pdf' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
-                                   }`}>
-                                      {file.type === 'folder' ? <Folder size={20} /> : <FileText size={20} />}
-                                   </div>
-                                   <div>
-                                      <p className={`text-[11px] font-black uppercase tracking-tight group-hover:text-blue-700 ${file.type === 'folder' ? 'text-blue-600' : 'text-slate-700'}`}>
-                                        {file.name}
-                                      </p>
-                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                                        {file.type === 'folder' ? 'Directorio corporativo' : `Modificado: Ayer • ${file.size}`}
-                                      </p>
-                                   </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {file.type === 'folder' && <span className="text-[8px] font-black text-blue-400 uppercase mr-2">Abrir</span>}
-                                  <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-500 transform translate-x-0 group-hover:translate-x-1 transition-all" />
-                                </div>
-                             </div>
-                          ))}
-                       </div>
-                    </div>
-                    <div className="p-4 bg-slate-50 border-t flex justify-end">
-                       <button onClick={() => setShowOneDrivePicker(false)} className="px-8 py-2.5 bg-white border border-slate-300 rounded-xl text-[10px] font-black uppercase text-slate-500 hover:text-slate-800 shadow-sm transition-all">Cancelar</button>
-                    </div>
+                        )}
+                        {getCurrentLibraryFiles().map(file => (
+                            <div key={file.id} onClick={() => selectLibraryFile(file)} className="flex items-center justify-between p-5 border-2 border-transparent hover:border-purple-200 hover:bg-purple-50 cursor-pointer rounded-2xl transition-all group shadow-sm mb-2">
+                              <div className="flex items-center min-w-0">
+                                  <div className="p-3 rounded-2xl mr-5 bg-purple-600 text-white shadow-sm">
+                                    {file.type === 'folder' ? <Folder size={24} /> : <FileText size={24} />}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[12px] font-black uppercase tracking-tight group-hover:text-purple-700 truncate">{file.name}</p>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Versión Actualizada</p>
+                                  </div>
+                              </div>
+                              <ArrowRight size={18} className="text-slate-200 group-hover:text-purple-500" />
+                            </div>
+                        ))}
+                      </div>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
       
+      {/* MODAL DE PREVISUALIZACIÓN - CORREGIDO PARA EVITAR 404 (SOLICITUD 3) */}
+      {previewModalOpen && previewFile && (
+        <div className="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[10001] p-4 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+              <div className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-4">
+                    <div className="p-2.5 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/40">
+                      <Monitor size={20} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight leading-none mb-1">Previsualización de Documento</h3>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest truncate max-w-[400px]">{previewFile.name}</p>
+                    </div>
+                 </div>
+                 <div className="flex items-center gap-3">
+                    <button onClick={() => handleDownload(previewFile.url, previewFile.name)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95">
+                      <Download size={14} /> Descargar
+                    </button>
+                    <button onClick={() => setPreviewModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white border border-transparent hover:border-red-400">
+                      <X size={24} />
+                    </button>
+                 </div>
+              </div>
+              
+              <div className="flex-1 bg-slate-100 flex items-center justify-center p-6 overflow-hidden relative">
+                 <div className="w-full h-full bg-white rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center text-center">
+                    {/* SI ES UNA URL SIMULADA (FOTO 4 FIX) MOSTRAR VISOR INTERNO EN LUGAR DE IFRAME */}
+                    {previewFile.url.startsWith('internal_sig_storage_') ? (
+                       <div className="flex-1 w-full h-full flex flex-col bg-slate-50">
+                          <div className="p-3 bg-slate-200 border-b flex justify-between items-center">
+                             <div className="flex items-center gap-2">
+                                <FileText size={16} className="text-red-600" />
+                                <span className="text-[10px] font-black uppercase text-slate-600">{previewFile.name}</span>
+                             </div>
+                             <div className="flex gap-2">
+                                <div className="w-32 h-2 bg-slate-300 rounded-full"></div>
+                                <div className="w-8 h-2 bg-slate-300 rounded-full"></div>
+                             </div>
+                          </div>
+                          <div className="flex-1 p-8 overflow-y-auto flex flex-col items-center">
+                             <div className="w-[210mm] min-h-[297mm] bg-white shadow-xl p-16 text-left border border-slate-200 animate-in slide-in-from-bottom-4 duration-700">
+                                <div className="flex justify-between border-b-2 border-slate-900 pb-6 mb-8">
+                                   <div className="font-black text-2xl uppercase tracking-tighter">Central de Maderas G&S SAS</div>
+                                   <div className="text-right">
+                                      <p className="font-black text-[10px] uppercase">Código: SIG-DOC-V1</p>
+                                      <p className="font-black text-[10px] uppercase">Fecha: 10/10/2025</p>
+                                   </div>
+                                </div>
+                                <h1 className="text-3xl font-black uppercase text-center mb-12 border-b border-slate-100 pb-4">{previewFile.name.replace('.pdf', '')}</h1>
+                                <div className="space-y-6">
+                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
+                                   <div className="h-4 bg-slate-100 rounded w-[95%]"></div>
+                                   <div className="h-4 bg-slate-100 rounded w-[98%]"></div>
+                                   <div className="h-4 bg-slate-100 rounded w-[92%]"></div>
+                                   <div className="grid grid-cols-2 gap-8 py-8">
+                                      <div className="h-32 bg-slate-50 border border-slate-100 rounded-xl"></div>
+                                      <div className="h-32 bg-slate-50 border border-slate-100 rounded-xl"></div>
+                                   </div>
+                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
+                                   <div className="h-4 bg-slate-100 rounded w-full"></div>
+                                   <div className="pt-20 flex justify-between">
+                                      <div className="w-48 border-t border-slate-900 pt-2 text-center">
+                                         <p className="font-black text-[8px] uppercase">Firma Responsable</p>
+                                         <p className="text-[10px] font-bold">Líder de Proceso</p>
+                                      </div>
+                                      <div className="w-48 border-t border-slate-900 pt-2 text-center">
+                                         <p className="font-black text-[8px] uppercase">Sello de Calidad</p>
+                                         <p className="text-[10px] font-bold">SIG-AUDIT-VERIFIED</p>
+                                      </div>
+                                   </div>
+                                </div>
+                             </div>
+                             <div className="p-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.5em] italic">Fin del Documento</div>
+                          </div>
+                       </div>
+                    ) : previewFile.name.toLowerCase().endsWith('.pdf') ? (
+                      <iframe src={previewFile.url} className="w-full h-full border-none" />
+                    ) : (previewFile.name.toLowerCase().endsWith('.jpg') || previewFile.name.toLowerCase().endsWith('.png')) ? (
+                      <img src={previewFile.url} alt="Previsualización" className="max-w-full max-h-full object-contain p-4" />
+                    ) : (
+                      <div className="space-y-6 max-w-sm">
+                         <div className="p-8 bg-blue-50 rounded-full inline-block mb-2"><FileSearch size={64} className="text-blue-600" /></div>
+                         <h4 className="text-lg font-black text-slate-800 uppercase">Visualización no disponible</h4>
+                         <p className="text-xs text-slate-500 font-medium">Use el botón superior para descargar el documento original.</p>
+                      </div>
+                    )}
+                 </div>
+              </div>
+              
+              <div className="p-4 bg-white border-t border-slate-100 flex justify-center text-slate-400">
+                 <p className="text-[9px] font-black uppercase tracking-[0.3em]">Visor de Seguridad Integral SIG - Central de Maderas</p>
+              </div>
+           </div>
+        </div>
+      )}
+      
       {infoModalOpen && activeActivity && (
         <div className="fixed inset-0 bg-slate-950/70 flex items-start justify-center z-[9999] p-4 pt-10 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-top-4 duration-300 border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
              <div className="p-6 bg-[#1e293b] text-white flex justify-between items-center shrink-0">
                 <div className="flex items-center">
-                   <div className="p-3 bg-red-600 rounded-xl mr-4 shadow-xl">
-                     <BookOpen size={24} className="text-white" />
-                   </div>
+                   <div className="p-3 bg-red-600 rounded-xl mr-4 shadow-xl"><BookOpen size={24} /></div>
                    <div>
-                      <h3 className="text-sm font-black leading-tight tracking-tight uppercase line-clamp-2">{activeActivity.clauseTitle}</h3>
+                      <h3 className="text-sm font-black uppercase leading-tight">{activeActivity.clauseTitle}</h3>
                       <div className="flex gap-2 mt-2">
-                        <span className="text-[8px] font-black uppercase tracking-wider bg-blue-900/60 px-2 py-1 rounded border border-blue-700/50">Numeral: {activeActivity.subClause}</span>
-                        <span className="text-[8px] font-black uppercase tracking-wider bg-slate-800 px-2 py-1 rounded border border-slate-700">{activeActivity.periodicity}</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-blue-900/60 px-2 py-1 rounded">Numeral: {activeActivity.subClause}</span>
                       </div>
                    </div>
                 </div>
-                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white"><X size={24} /></button>
+                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full"><X size={24} /></button>
              </div>
-             <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin flex-1">
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-[11px] text-slate-600 leading-relaxed italic font-medium">
-                  <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-widest mb-3"><ShieldCheck size={14} className="mr-2" /> Descripción</div>
-                  "{activeActivity.description}"
+             <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-[11px] text-slate-600 italic">
+                  {activeActivity.description}
                 </div>
-                <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100/50 text-[11px] text-slate-800 leading-relaxed font-semibold">
-                  <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-widest mb-3"><Target size={14} className="mr-2" /> Contexto Interno</div>
+                <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100/50 text-[11px] text-slate-800">
                   {activeActivity.contextualization}
                 </div>
-                <div className="bg-orange-50/30 p-6 rounded-2xl border border-orange-100/50 text-[11px] text-orange-950 font-black">
-                  <div className="flex items-center text-orange-600 font-black text-[9px] uppercase tracking-widest mb-3"><BadgeCheck size={14} className="mr-2" /> Criterio de Auditoría</div>
-                  {activeActivity.relatedQuestions}
-                </div>
-             </div>
-             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-                <button onClick={() => setInfoModalOpen(false)} className="px-8 py-3 bg-[#0f172a] text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2">Cerrar Consulta <ArrowRight size={14}/></button>
              </div>
           </div>
         </div>

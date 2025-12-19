@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Activity, Periodicity, MonthlyExecution, StandardDefinition, Plant, User, UserRole, Area } from '../types';
 import { AREAS } from '../constants';
 import { dataService } from '../services/dataService';
@@ -7,7 +7,9 @@ import {
   Plus, Edit2, Trash2, X, Search, ShieldCheck, FileText, 
   TreePine, Briefcase, Truck, Factory, CheckSquare, Square, FileUp, 
   Save, Filter, BookOpen, Layers, ClipboardCheck, AlignLeft, Target,
-  ChevronDown, Loader2
+  ChevronDown, Loader2, Move,
+  // Added AlertCircle to fix the missing import error
+  AlertCircle
 } from 'lucide-react';
 
 interface RequirementsManagerProps {
@@ -51,27 +53,53 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
   const [pendingImports, setPendingImports] = useState<PendingImport[]>([]);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Estados para Draggable
+  const [modalPos, setModalPos] = useState({ x: 80, y: 0 }); // Inicialmente a la derecha
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+
   useEffect(() => {
     const unsub = dataService.subscribeToPlants(data => setPlants(data));
     return () => unsub();
   }, []);
 
-  // Lógica de Filtrado Corregida
+  // Lógica de arrastre
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setModalPos({
+        x: e.clientX - dragRef.current.startX,
+        y: e.clientY - dragRef.current.startY
+      });
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragRef.current.startX = e.clientX - modalPos.x;
+    dragRef.current.startY = e.clientY - modalPos.y;
+  };
+
   const filteredActivities = useMemo(() => {
     return activities.filter(activity => {
-      // 1. Filtro por Norma
       const matchesStandard = selectedStandardFilter === 'ALL' || activity.standards.includes(selectedStandardFilter);
-      
-      // 2. Filtro por Término de Búsqueda (Case Insensitive)
       const term = searchTerm.toLowerCase().trim();
       const matchesSearch = !term || 
         activity.clauseTitle.toLowerCase().includes(term) ||
         activity.subClause.toLowerCase().includes(term) ||
         activity.responsibleArea.toLowerCase().includes(term);
-
       return matchesStandard && matchesSearch;
     }).sort((a, b) => {
-      // Ordenamiento por numeral para mejor UX
       return a.subClause.localeCompare(b.subClause, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [activities, searchTerm, selectedStandardFilter]);
@@ -86,6 +114,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
 
   const handleOpenModal = (activity?: Activity) => {
     setErrorMsg(null);
+    setModalPos({ x: 80, y: 0 }); // Reset pos con desplazamiento inicial a la derecha
     if (activity) {
       setEditingActivity(activity);
       setFormData({
@@ -229,18 +258,40 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[5000] p-4 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 relative">
-            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-              <div className="flex flex-col">
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight uppercase">{editingActivity ? 'Editar Requisito' : 'Nuevo Requisito'}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Matriz de Cumplimiento Integral</p>
+          <div 
+            style={{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }}
+            className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 relative animate-in zoom-in-95 duration-200"
+          >
+            <div 
+              onMouseDown={handleMouseDown}
+              className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0 cursor-move active:cursor-grabbing select-none"
+            >
+              <div className="flex items-center">
+                <div className="p-3 bg-slate-900 text-white rounded-2xl mr-4 shadow-lg">
+                  {editingActivity ? <Edit2 size={24} /> : <Plus size={24} />}
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase leading-none mb-1">
+                    {editingActivity ? 'Editar Requisito' : 'Nuevo Requisito'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Matriz de Cumplimiento Integral</p>
+                </div>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-900 p-2 hover:bg-slate-100 rounded-full"><X size={28} /></button>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-slate-200 rounded-lg text-slate-500"><Move size={14} /></div>
+                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-900 p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="p-8 space-y-8 overflow-y-auto scrollbar-thin flex-1">
+              {errorMsg && (
+                <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl flex items-center gap-3 text-xs font-black uppercase animate-pulse">
+                  <AlertCircle size={18} /> {errorMsg}
+                </div>
+              )}
+
               <div className="space-y-4">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Normas</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Normas Asociadas</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {standardsList.map((std) => {
                     const Icon = getStandardIcon(std.type);
@@ -257,7 +308,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               </div>
 
               <div className="space-y-4">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Plantas</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sedes / Plantas</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
                   {plants.map((plt) => { 
                     const isS = formData.plantIds?.map(id => id.toUpperCase()).includes(plt.id.toUpperCase());
@@ -289,7 +340,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Título</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Título descriptivo</label>
                 <input required type="text" value={formData.clauseTitle} onChange={e => setFormData({...formData, clauseTitle: e.target.value})} 
                        className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl text-sm font-black bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none" 
                        placeholder="Título del requisito..." />
@@ -298,7 +349,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                    <AlignLeft size={14} className="mr-2" /> Descripción
+                    <AlignLeft size={14} className="mr-2" /> Descripción Normativa
                   </label>
                   <textarea rows={4} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} 
                             className="w-full border-2 border-slate-100 rounded-3xl p-5 text-sm font-medium bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none italic" 
@@ -306,7 +357,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                 </div>
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                    <Target size={14} className="mr-2" /> Explicación
+                    <Target size={14} className="mr-2" /> Explicación Operativa
                   </label>
                   <textarea rows={4} value={formData.contextualization} onChange={e => setFormData({...formData, contextualization: e.target.value})} 
                             className="w-full border-2 border-slate-100 rounded-3xl p-5 text-sm font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none" 
@@ -316,7 +367,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
 
               <div className="space-y-2">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                  <ClipboardCheck size={14} className="mr-2" /> Tarea Específica / Criterio
+                  <ClipboardCheck size={14} className="mr-2" /> Criterio de Auditoría / Tarea
                 </label>
                 <textarea rows={3} value={formData.relatedQuestions} onChange={e => setFormData({...formData, relatedQuestions: e.target.value})} 
                           className="w-full border-2 border-slate-100 rounded-3xl p-5 text-sm font-black bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none" 
@@ -324,7 +375,7 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
               </div>
 
               <div className="bg-slate-900 p-8 rounded-[2.5rem] border-2 border-slate-800 shadow-xl">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Periodicidad</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Periodicidad de Seguimiento</label>
                 <div className="relative">
                   <select value={selectedPeriodicity} onChange={e => setSelectedPeriodicity(e.target.value as Periodicity)} 
                           className="w-full bg-slate-800 border-2 border-slate-700 text-white rounded-2xl p-5 text-sm font-black focus:border-blue-500 outline-none appearance-none">
@@ -334,10 +385,10 @@ export const RequirementsManager: React.FC<RequirementsManagerProps> = ({
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-6 pb-10">
+              <div className="flex gap-4 pt-6 pb-6">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-5 text-slate-400 font-black text-xs uppercase tracking-widest hover:bg-slate-50 rounded-[1.5rem] transition-all">Cancelar</button>
-                <button type="submit" className="flex-[2] py-5 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:bg-black transition-all flex items-center justify-center">
-                  <Save size={20} className="mr-3" /> GUARDAR
+                <button type="submit" className="flex-[2] py-5 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:bg-black transition-all flex items-center justify-center active:scale-95">
+                  <Save size={20} className="mr-3" /> GUARDAR REQUISITO
                 </button>
               </div>
             </form>
