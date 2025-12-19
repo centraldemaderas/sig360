@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -16,6 +15,10 @@ import { dataService } from './services/dataService';
 import { USE_CLOUD_DB } from './firebaseConfig';
 import { Database } from 'lucide-react';
 
+/**
+ * SIG-Manager Pro - Aplicación Principal
+ * Versión de Estabilidad: 1.1.2 (Corrección de diferencias y consultas)
+ */
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
@@ -73,7 +76,7 @@ function App() {
   const handleDeleteUser = async (id: string) => { if (window.confirm("¿Está seguro?")) await dataService.deleteUser(id); };
   const handleAddPlant = async (p: Plant) => await dataService.addPlant(p);
   const handleUpdatePlant = async (p: Plant) => await dataService.updatePlant(p);
-  const handleDeletePlant = async (id: string) => { if (window.confirm("¿Desea eliminar esta planta?")) await dataService.deletePlant(id); };
+  const handleDeletePlant = async (id: string) => { await dataService.deletePlant(id); };
   const handleAddArea = async (a: Area) => await dataService.addArea(a);
   const handleUpdateArea = async (a: Area) => await dataService.updateArea(a);
   const handleDeleteArea = async (id: string) => { await dataService.deleteArea(id); };
@@ -90,7 +93,7 @@ function App() {
       return <StandardView standard={stdType} activities={activities} areas={areas} onUpdateActivity={handleUpdateActivity} currentYear={currentYear} setCurrentYear={setCurrentYear} currentUser={currentUser} />;
     }
     switch (activeView) {
-      case 'dashboard': return <Dashboard />;
+      case 'dashboard': return <Dashboard activities={activities} areas={areas} plants={plants} />;
       case 'evidence-dashboard': return <EvidenceDashboard activities={activities} currentUser={currentUser} onUpdateActivity={handleUpdateActivity} />;
       case 'norms': return <StandardManager standards={standards} onUpdateStandard={handleUpdateStandard} currentUser={currentUser} />;
       case 'requirements': return <RequirementsManager activities={activities} onAdd={handleAddActivity} onUpdate={handleUpdateActivity} onDelete={handleDeleteActivity} standardsList={standards} currentUser={currentUser} areas={areas} />;
@@ -98,7 +101,7 @@ function App() {
       case 'areas': return <AreaManager areas={areas} users={users} onAdd={handleAddArea} onUpdate={handleUpdateArea} onDelete={handleDeleteArea} />;
       case 'users': return <UserManagement users={users} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} areas={areas} />;
       case 'settings': return <SystemSettings currentLogo={companyLogo} onLogoChange={handleLogoChange} />;
-      default: return <Dashboard />;
+      default: return <Dashboard activities={activities} areas={areas} plants={plants} />;
     }
   };
 

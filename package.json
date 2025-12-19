@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "npx serve .",
-    "build": "mkdir -p dist && npx esbuild index.tsx --bundle --outfile=dist/index.js --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && sed -i 's/index.tsx/index.js/g' dist/index.html",
+    "build": "mkdir -p dist && npx esbuild index.tsx --bundle --outfile=dist/index.js --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",

@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MONTHS } from '../constants';
 import { Activity, Area, Periodicity, User, Evidence, CommentLog, MonthlyExecution, Plant } from '../types';
 import { 
   Check, X, Cloud, FileText, AlertCircle, Filter, Eye, Clock, History, 
   ShieldCheck, CheckCircle, Info, BookOpen, Target, Factory, Shield, 
   FileUp, ExternalLink, ListChecks, ArrowRight, Layers, MapPin, BadgeCheck,
-  // Added missing TreePine icon import
-  TreePine
+  TreePine, Upload, Move, Link, Globe, ShieldAlert, Folder, Search,
+  UserCircle, ChevronLeft
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 
@@ -20,6 +20,26 @@ interface StandardViewProps {
   setCurrentYear: (year: number) => void;
   currentUser: User;
 }
+
+// Mock de sistema de archivos para el simulador de OneDrive con soporte de carpetas
+const ONEDRIVE_FS: Record<string, any[]> = {
+  'root': [
+    { id: 'f1', name: 'Auditoría 2025', type: 'folder', items: 'auditoria' },
+    { id: 'f2', name: 'Documentos Legales', type: 'folder', items: 'legal' },
+    { id: '1', name: 'Manual_Calidad_G&S.pdf', size: '2.4 MB', type: 'pdf' },
+  ],
+  'auditoria': [
+    { id: '2', name: 'Acta de Gerencia_2025.pdf', size: '1.2 MB', type: 'pdf' },
+    { id: '3', name: 'Matriz_Riesgos_V2.xlsx', size: '450 KB', type: 'excel' },
+    { id: '4', name: 'Politica_Calidad_Firmada.jpg', size: '2.8 MB', type: 'image' },
+    { id: '5', name: 'Evidencia_Auditoria_Interna.pdf', size: '5.1 MB', type: 'pdf' },
+    { id: '6', name: 'Plan_Estrategico_G&S.docx', size: '890 KB', type: 'word' },
+  ],
+  'legal': [
+    { id: '7', name: 'Camara_Comercio_2025.pdf', size: '1.1 MB', type: 'pdf' },
+    { id: '8', name: 'RUT_Actualizado.pdf', size: '300 KB', type: 'pdf' },
+  ]
+};
 
 export const StandardView: React.FC<StandardViewProps> = ({ 
   standard: initialStandard, 
@@ -40,26 +60,56 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [activeMonthIndex, setActiveMonthIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [adminComment, setAdminComment] = useState('');
+  const [uploadTab, setUploadTab] = useState<'FILE' | 'LINK'>('FILE');
+  const [externalUrl, setExternalUrl] = useState('');
+
+  // Estados OneDrive
+  const [showOneDrivePicker, setShowOneDrivePicker] = useState(false);
+  const [isOneDriveLoggingIn, setIsOneDriveLoggingIn] = useState(false);
+  const [isOneDriveAuthenticated, setIsOneDriveAuthenticated] = useState(false);
+  const [currentFolderPath, setCurrentFolderPath] = useState<string[]>(['root']);
+
+  // Estados para Draggable
+  const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setSelectedStandard(initialStandard);
   }, [initialStandard]);
 
   useEffect(() => {
-    const unsub = dataService.subscribeToPlants(data => {
-      setPlants(data);
-    });
+    const unsub = dataService.subscribeToPlants(data => setPlants(data));
     return () => unsub();
   }, []);
 
-  const getStandardIcon = (type: string) => {
-    const t = type.toLowerCase();
-    if (t.includes('9001')) return FileText;
-    if (t.includes('sst')) return ShieldCheck;
-    if (t.includes('fsc')) return TreePine;
-    if (t.includes('vial') || t.includes('pesv')) return Factory;
-    return Shield;
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragRef.current.startX = e.clientX - modalPos.x;
+    dragRef.current.startY = e.clientY - modalPos.y;
   };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setModalPos({
+        x: e.clientX - dragRef.current.startX,
+        y: e.clientY - dragRef.current.startY
+      });
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
 
   const filteredActivities = useMemo(() => {
     return activities
@@ -68,7 +118,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
         const matchesArea = selectedArea === 'ALL' || a.responsibleArea === selectedArea;
         const matchesPlant = selectedPlant === 'ALL' || 
           (a.plantIds && a.plantIds.map(id => id.toUpperCase()).includes(selectedPlant.toUpperCase()));
-          
         return matchesStandard && matchesArea && matchesPlant;
       })
       .sort((a, b) => {
@@ -84,13 +133,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
   }, [activities, selectedStandard, selectedArea, selectedPlant]);
 
   const stats = useMemo(() => {
-    let approved = 0;
-    let loaded = 0;
-    let rejected = 0;
-    let overdue = 0;
-    const currentRealMonth = new Date().getMonth();
-    const currentRealYear = new Date().getFullYear();
-
+    let approved = 0, pending = 0, rejected = 0, overdue = 0;
+    const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
     filteredActivities.forEach(activity => {
       const plan = activity.plans?.[currentYear] || [];
       plan.forEach((m, idx) => {
@@ -98,18 +142,15 @@ export const StandardView: React.FC<StandardViewProps> = ({
           if (m.evidence) {
             if (m.evidence.status === 'APPROVED') approved++;
             else if (m.evidence.status === 'REJECTED') rejected++;
-            else if (m.evidence.status === 'PENDING') loaded++;
+            else pending++;
           } else {
-            const isPast = currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth);
-            if (isPast) overdue++;
+            if (currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth)) overdue++;
           }
         }
       });
     });
-    return { approved, loaded, rejected, overdue, totalActive: filteredActivities.length };
+    return { approved, pending, rejected, overdue, totalActive: filteredActivities.length };
   }, [filteredActivities, currentYear]);
-
-  const availableStandards = Array.from(new Set(activities.flatMap(a => a.standards))).sort();
 
   const openModal = (activityId: string, monthIndex: number) => {
     setActiveActivityId(activityId);
@@ -117,26 +158,41 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setModalOpen(true);
     setAdminComment('');
     setIsSaving(false);
+    setUploadTab('FILE');
+    setExternalUrl('');
+    // Corregimos posición inicial para que empiece centrado (0,0 con transform translate en un contenedor flex-center es el centro real)
+    setModalPos({ x: 0, y: 0 }); 
+    setShowOneDrivePicker(false);
+    setCurrentFolderPath(['root']);
   };
 
-  const openInfoModal = (activityId: string) => {
-    setActiveActivityId(activityId);
-    setInfoModalOpen(true);
-  };
+  const handleEvidenceSubmit = async (type: 'FILE' | 'LINK', data: string, name?: string) => {
+    if (!activeActivityId || activeMonthIndex === null) return;
+    setIsSaving(true);
+    const activityToUpdate = activities.find(a => a.id === activeActivityId);
+    if (!activityToUpdate) return;
 
-  const getPlanForYear = (activity: Activity, year: number): MonthlyExecution[] => {
-    if (activity.plans && activity.plans[year]) return activity.plans[year];
-    return Array.from({ length: 12 }, (_, i) => {
-      let isPlanned = false;
-      switch (activity.periodicity) {
-        case Periodicity.MONTHLY: isPlanned = true; break;
-        case Periodicity.BIMONTHLY: isPlanned = i % 2 === 0; break;
-        case Periodicity.QUARTERLY: isPlanned = (i + 1) % 3 === 0; break;
-        case Periodicity.SEMIANNUAL: isPlanned = i === 5 || i === 11; break;
-        case Periodicity.ANNUAL: isPlanned = i === 11; break;
-      }
-      return { month: i, planned: isPlanned, executed: false, delayed: false };
-    });
+    const currentYearPlan = [...(activityToUpdate.plans?.[currentYear] || [])];
+    const newEvidence: Evidence = {
+      url: data,
+      type: type,
+      fileName: name || (type === 'LINK' ? 'Enlace OneDrive/Externo' : 'Documento'),
+      uploadedBy: currentUser.name,
+      uploadedAt: new Date().toLocaleString(),
+      status: 'PENDING',
+      history: [{
+        id: 'h-' + Date.now(),
+        text: `Carga de evidencia (${type}): ${name || data}`,
+        author: currentUser.name,
+        date: new Date().toLocaleString(),
+        status: 'PENDING'
+      }]
+    };
+
+    currentYearPlan[activeMonthIndex] = { ...currentYearPlan[activeMonthIndex], evidence: newEvidence };
+    const updatedActivity: Activity = { ...activityToUpdate, plans: { ...(activityToUpdate.plans || {}), [currentYear]: currentYearPlan } };
+    await onUpdateActivity(updatedActivity);
+    setIsSaving(false);
   };
 
   const handleAdminVerification = async (status: 'APPROVED' | 'REJECTED') => {
@@ -144,9 +200,10 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(true);
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
-    const currentYearPlan = getPlanForYear(activityToUpdate, currentYear);
+    const currentYearPlan = [...(activityToUpdate.plans?.[currentYear] || [])];
     const targetPlan = currentYearPlan[activeMonthIndex];
-    if (!targetPlan || !targetPlan.evidence) return;
+    if (!targetPlan?.evidence) return;
+    
     const newCommentEntry: CommentLog = {
       id: `log-adm-${Date.now()}`,
       text: adminComment || (status === 'APPROVED' ? 'Evidencia validada y aprobada.' : 'Evidencia rechazada por inconformidad.'),
@@ -154,29 +211,54 @@ export const StandardView: React.FC<StandardViewProps> = ({
       date: new Date().toLocaleString(),
       status: status
     };
-    const newYearPlan = currentYearPlan.map((item, index) => {
-      if (index !== activeMonthIndex) return item;
-      const updatedEvidence: Evidence = {
-        ...(item.evidence as Evidence),
-        status: status,
-        adminComment: newCommentEntry.text,
-        approvedBy: status === 'APPROVED' ? currentUser.name : null as any,
-        rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
-        history: [newCommentEntry, ...(item.evidence?.history || [])]
-      };
-      return { ...item, evidence: updatedEvidence };
-    });
-    const updatedActivity: Activity = {
-      ...activityToUpdate,
-      plans: { ...(activityToUpdate.plans || {}), [currentYear]: newYearPlan }
+    
+    const updatedEvidence: Evidence = {
+      ...targetPlan.evidence,
+      status: status,
+      adminComment: newCommentEntry.text,
+      approvedBy: status === 'APPROVED' ? currentUser.name : null as any,
+      rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
+      history: [newCommentEntry, ...targetPlan.evidence.history]
     };
+
+    currentYearPlan[activeMonthIndex] = { ...targetPlan, evidence: updatedEvidence };
+    const updatedActivity: Activity = { ...activityToUpdate, plans: { ...(activityToUpdate.plans || {}), [currentYear]: currentYearPlan } };
     await onUpdateActivity(updatedActivity);
     setIsSaving(false);
     setModalOpen(false);
   };
 
+  const handleOneDriveLogin = () => {
+    setIsOneDriveLoggingIn(true);
+    setTimeout(() => {
+      setIsOneDriveLoggingIn(false);
+      setIsOneDriveAuthenticated(true);
+    }, 1500);
+  };
+
+  const selectOneDriveFile = (file: any) => {
+    if (file.type === 'folder') {
+      setCurrentFolderPath([...currentFolderPath, file.items]);
+      return;
+    }
+    const url = `https://onedrive.live.com/view?id=${file.id}`;
+    handleEvidenceSubmit('LINK', url, file.name);
+    setShowOneDrivePicker(false);
+  };
+
+  const goBackOneDrive = () => {
+    if (currentFolderPath.length > 1) {
+      setCurrentFolderPath(currentFolderPath.slice(0, -1));
+    }
+  };
+
+  const getCurrentFiles = () => {
+    const last = currentFolderPath[currentFolderPath.length - 1];
+    return ONEDRIVE_FS[last] || [];
+  };
+
   const renderPeriodicityCells = (activity: Activity) => {
-    const plan = getPlanForYear(activity, currentYear);
+    const plan = activity.plans?.[currentYear] || [];
     const cells = [];
     let i = 0;
     while (i < 12) {
@@ -189,190 +271,426 @@ export const StandardView: React.FC<StandardViewProps> = ({
         case Periodicity.MONTHLY: default: colSpan = 1; break;
       }
       if (i + colSpan > 12) colSpan = 12 - i;
-      let evidenceFound = null;
-      let evidenceIndex = -1;
-      let isPlanned = false;
-      let plannedIndex = -1;
+      let evidenceFound = null, evidenceIndex = -1, isPlanned = false, plannedIndex = -1;
       for (let k = i; k < i + colSpan; k++) {
         if (plan[k]?.evidence) { evidenceFound = plan[k].evidence; evidenceIndex = k; }
         if (plan[k]?.planned) { isPlanned = true; plannedIndex = k; }
       }
       let interactionIndex = evidenceIndex !== -1 ? evidenceIndex : (plannedIndex !== -1 ? plannedIndex : i + colSpan - 1);
-      let cellBg = "bg-white"; 
-      let cellContent = null;
+      let cellBg = "bg-white", cellContent = null;
       if (evidenceFound) {
         if (evidenceFound.status === 'APPROVED') { cellBg = "bg-green-50/50"; cellContent = <Check size={14} className="text-green-500" />; } 
-        else if (evidenceFound.status === 'REJECTED') { cellBg = "bg-orange-50/50"; cellContent = <div className="p-1.5 bg-orange-100 rounded-full flex items-center justify-center"><AlertCircle size={10} className="text-orange-600" /></div>; } 
+        else if (evidenceFound.status === 'REJECTED') { cellBg = "bg-orange-50/50"; cellContent = <div className="p-1 bg-orange-100 rounded-full"><AlertCircle size={10} className="text-orange-600" /></div>; } 
         else { cellBg = "bg-blue-50/50"; cellContent = <Clock size={14} className="text-blue-500" />; }
       } else if (isPlanned) {
-        const currentRealMonth = new Date().getMonth();
-        const currentRealYear = new Date().getFullYear();
-        const isOverdue = currentYear < currentRealYear || (currentYear === currentRealYear && i <= currentRealMonth);
-        if (isOverdue) { cellBg = "bg-red-50/30"; cellContent = <span className="text-red-400 font-bold text-sm">!</span>; } 
-        else { cellBg = "bg-white"; cellContent = <span className="text-slate-200 font-bold text-[10px]">P</span>; }
+        const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
+        if (currentYear < currentRealYear || (currentYear === currentRealYear && i <= currentRealMonth)) { cellBg = "bg-red-50/30"; cellContent = <span className="text-red-400 font-bold text-xs">!</span>; } 
+        else { cellBg = "bg-white"; cellContent = <span className="text-slate-200 font-bold text-[9px]">P</span>; }
       }
-      cells.push(<td key={i} colSpan={colSpan} className={`border-r p-0 text-center transition-all relative group ${cellBg} border-slate-100 border-b h-14`}><div onClick={() => isPlanned && openModal(activity.id, interactionIndex)} className={`w-full h-full flex items-center justify-center ${isPlanned ? 'cursor-pointer' : ''}`}>{cellContent}</div></td>);
+      cells.push(<td key={i} colSpan={colSpan} className={`border-r p-0 text-center transition-all relative group ${cellBg} border-slate-100 border-b h-10`}><div onClick={() => isPlanned && openModal(activity.id, interactionIndex)} className={`w-full h-full flex items-center justify-center ${isPlanned ? 'cursor-pointer hover:bg-slate-100/50' : ''}`}>{cellContent}</div></td>);
       i += colSpan;
     }
     return cells;
   };
 
-  const getYearStatus = (activity: Activity) => {
-    const plan = getPlanForYear(activity, currentYear);
-    let totalPlanned = 0, totalExecuted = 0, totalApproved = 0, totalOverdue = 0;
-    const currentRealMonth = new Date().getMonth(), currentRealYear = new Date().getFullYear();
-    plan.forEach((m, idx) => {
+  const getMissingTasks = (activity: Activity) => {
+    const plan = activity.plans?.[currentYear] || [];
+    let planned = 0, approved = 0;
+    plan.forEach(m => {
       if (m.planned) {
-        totalPlanned++;
-        if (m.evidence) { totalExecuted++; if (m.evidence.status === 'APPROVED') totalApproved++; } 
-        else if (currentYear < currentRealYear || (currentYear === currentRealYear && idx <= currentRealMonth)) { totalOverdue++; }
+        planned++;
+        if (m.evidence?.status === 'APPROVED') approved++;
       }
     });
-    if (totalOverdue > 0) return { status: 'DELAYED', color: 'bg-red-50 text-red-600 border-red-100', label: `${totalOverdue} PEND` };
-    if (totalPlanned === 0) return { status: 'NONE', color: 'bg-slate-50 text-slate-300', label: '-' };
-    if (totalExecuted === totalPlanned) {
-      if (totalApproved === totalPlanned) return { status: 'COMPLIANT', color: 'bg-green-50 text-green-600 border-green-100', label: 'LISTO' };
-      return { status: 'REVIEW', color: 'bg-blue-50 text-blue-600 border-blue-100', label: 'REV' };
-    }
-    return { status: 'PROGRESS', color: 'bg-blue-50 text-blue-600 border-blue-100', label: 'REV' };
-  };
-
-  const getProgressStats = (activity: Activity) => {
-     const plan = getPlanForYear(activity, currentYear);
-     const executed = plan.filter(m => m.evidence && m.evidence.status === 'APPROVED').length;
-     const planned = plan.filter(m => m.planned).length;
-     return { executed, planned };
+    return { pending: planned - approved, total: planned };
   };
 
   const activeActivity = activeActivityId ? activities.find(a => a.id === activeActivityId) : null;
-  const activePlan = activeActivity && activeMonthIndex !== null ? getPlanForYear(activeActivity, currentYear)[activeMonthIndex] : null;
+  const activePlan = activeActivity && activeMonthIndex !== null ? (activeActivity.plans?.[currentYear] || [])[activeMonthIndex] : null;
   const activeEvidence = activePlan?.evidence || null;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-8rem)]">
-      <div className="p-4 border-b border-slate-200 bg-white flex flex-col gap-4 shrink-0">
+      <div className="p-4 border-b border-slate-200 bg-white space-y-4 shrink-0">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="flex flex-wrap gap-3 items-center">
-            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-               <button onClick={() => setCurrentYear(2025)} className={`px-4 py-1.5 text-xs font-black rounded-md transition-all ${currentYear === 2025 ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:bg-slate-50'}`}>2025</button>
-               <button onClick={() => setCurrentYear(2026)} className={`px-4 py-1.5 text-xs font-black rounded-md transition-all ${currentYear === 2026 ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:bg-slate-50'}`}>2026</button>
+            <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 shadow-inner">
+               <button onClick={() => setCurrentYear(2025)} className={`px-4 py-1.5 text-[11px] font-black rounded-lg transition-all ${currentYear === 2025 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>2025</button>
+               <button onClick={() => setCurrentYear(2026)} className={`px-4 py-1.5 text-[11px] font-black rounded-lg transition-all ${currentYear === 2026 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>2026</button>
             </div>
-            <div className="bg-white p-2 border border-slate-200 rounded-lg flex items-center space-x-2 shadow-sm min-w-[200px]"><Factory size={16} className="text-red-600" /><select value={selectedPlant} onChange={(e) => setSelectedPlant(e.target.value)} className="bg-transparent border-none outline-none text-[10px] font-black text-slate-800 flex-1 uppercase tracking-tight"><option value="ALL">TODAS LAS PLANTAS</option>{plants.map(p => <option key={p.id} value={p.id}>{p.name} {p.isMain ? '(MATRIZ)' : ''}</option>)}</select></div>
-            <div className="bg-white p-2 border border-slate-200 rounded-lg flex items-center space-x-2 shadow-sm min-w-[180px]"><Filter size={16} className="text-slate-400" /><select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="bg-transparent border-none outline-none text-[10px] font-black text-slate-800 flex-1 uppercase tracking-tight"><option value="ALL">TODAS LAS ÁREAS</option>{areas.map(area => <option key={area.id} value={area.name}>{area.name}</option>)}</select></div>
-            <div className="bg-white p-2 border border-slate-200 rounded-lg flex items-center space-x-2 shadow-sm min-w-[200px]"><Shield size={16} className="text-blue-600" /><select value={selectedStandard} onChange={(e) => setSelectedStandard(e.target.value)} className="bg-transparent border-none outline-none text-[10px] font-black text-slate-800 flex-1 uppercase tracking-tight"><option value="ALL">TODAS LAS NORMAS</option>{availableStandards.map(std => <option key={std} value={std}>{std}</option>)}</select></div>
+            <select value={selectedPlant} onChange={(e) => setSelectedPlant(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none focus:ring-2 focus:ring-red-600/20">
+              <option value="ALL">TODAS LAS PLANTAS</option>
+              {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="bg-white px-3 py-2 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-tight shadow-sm outline-none focus:ring-2 focus:ring-red-600/20">
+              <option value="ALL">TODAS LAS ÁREAS</option>
+              {areas.map(area => <option key={area.id} value={area.name}>{area.name}</option>)}
+            </select>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 shadow-inner"><ListChecks size={16} className="text-slate-500 mr-2" /><div className="flex flex-col"><span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Activos</span><span className="text-xs font-black text-slate-800">{stats.totalActive} REQUISITOS</span></div></div>
-            <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wider bg-white p-2 rounded-xl border border-slate-200 shadow-sm"><div className="flex items-center px-2 py-1 bg-green-50 rounded-lg border border-green-100 group transition-all hover:shadow-sm"><div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div><span className="text-green-800 mr-1.5">APROBADO</span><span className="bg-green-600 text-white px-1.5 py-0.5 rounded-md text-[9px] min-w-[1.5rem] text-center">{stats.approved}</span></div><div className="flex items-center px-2 py-1 bg-blue-50 rounded-lg border border-blue-100 group transition-all hover:shadow-sm"><div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div><span className="text-blue-800 mr-1.5">CARGADO</span><span className="bg-blue-600 text-white px-1.5 py-0.5 rounded-md text-[9px] min-w-[1.5rem] text-center">{stats.loaded}</span></div><div className="flex items-center px-2 py-1 bg-orange-50 rounded-lg border border-orange-100 group transition-all hover:shadow-sm"><div className="w-2 h-2 bg-orange-400 rounded-full mr-2"></div><span className="text-orange-800 mr-1.5">RECHAZADO</span><span className="bg-orange-600 text-white px-1.5 py-0.5 rounded-md text-[9px] min-w-[1.5rem] text-center">{stats.rejected}</span></div><div className="flex items-center px-2 py-1 bg-red-50 rounded-lg border border-red-100 group transition-all hover:shadow-sm"><div className="w-2 h-2 bg-red-400 rounded-full mr-2"></div><span className="text-red-800 mr-1.5">VENCIDO</span><span className="bg-red-600 text-white px-1.5 py-0.5 rounded-md text-[9px] min-w-[1.5rem] text-center">{stats.overdue}</span></div></div>
+
+          <div className="flex gap-2 flex-wrap xl:flex-nowrap">
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+              <ListChecks size={14} className="text-slate-500" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-slate-800 leading-none">{stats.totalActive}</span><span className="text-[7px] font-bold text-slate-400 uppercase">Total Requisitos</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-xl">
+              <Check size={14} className="text-green-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-green-700 leading-none">{stats.approved}</span><span className="text-[7px] font-bold text-green-600 uppercase">Aprobados</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-xl">
+              <Clock size={14} className="text-blue-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-blue-700 leading-none">{stats.pending}</span><span className="text-[7px] font-bold text-blue-600 uppercase">Pendientes</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-100 rounded-xl">
+              <AlertCircle size={14} className="text-orange-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-orange-700 leading-none">{stats.rejected}</span><span className="text-[7px] font-bold text-orange-600 uppercase">Rechazados</span></div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
+              <ShieldAlert size={14} className="text-red-600" />
+              <div className="flex flex-col"><span className="text-[14px] font-black text-red-700 leading-none">{stats.overdue}</span><span className="text-[7px] font-bold text-red-600 uppercase">Vencidos</span></div>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="overflow-auto flex-1 scrollbar-thin">
-        <table className="w-full text-[11px] text-left border-collapse table-fixed">
-          <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] tracking-widest sticky top-0 z-10 shadow-sm border-b border-slate-200">
-            <tr><th className="p-3 border-r border-slate-200 w-16 text-center">Cláusula</th><th className="p-3 border-r border-slate-200 min-w-[160px]">Requisito (Norma)</th><th className="p-3 border-r border-slate-200 min-w-[200px] bg-slate-50/50">Tarea Específica / Criterio</th><th className="p-3 border-r border-slate-200 w-16 text-center bg-slate-100/50">{currentYear}</th>{MONTHS.map(m => <th key={m} className="p-3 border-r border-slate-200 text-center w-10">{m}</th>)}<th className="p-3 w-16 text-center sticky right-0 bg-slate-50 shadow-l">Avance</th></tr>
+        <table className="w-full text-[10px] text-left border-collapse table-fixed">
+          <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[9px] tracking-widest sticky top-0 z-10 shadow-sm border-b border-slate-200">
+            <tr>
+              <th className="p-2 border-r w-12 text-center">Claus.</th>
+              <th className="p-2 border-r min-w-[150px]">Requisito</th>
+              <th className="p-2 border-r min-w-[180px]">Criterio Auditoría</th>
+              {MONTHS.map(m => <th key={m} className="p-2 border-r text-center w-8">{m}</th>)}
+              <th className="p-2 w-16 text-center sticky right-0 bg-slate-50 border-l">Avance</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredActivities.map((activity) => {
-                const yearStatus = getYearStatus(activity);
-                const progress = getProgressStats(activity);
-                return (<tr key={activity.id} className="hover:bg-slate-50/30 transition-colors h-14"><td className="p-3 border-r border-slate-100 text-center font-black bg-white"><div className="text-[12px] text-slate-800">{activity.clause}</div><div className="text-[9px] text-slate-400 font-bold">{activity.subClause}</div></td><td className="p-3 border-r border-slate-100 bg-white"><div className="flex justify-between items-start"><div className="font-bold text-slate-800 text-[10px] leading-tight line-clamp-2 pr-1">{activity.clauseTitle}</div><button onClick={() => openInfoModal(activity.id)} className="text-blue-400 hover:text-blue-600 p-0.5"><Info size={12} /></button></div><div className="flex flex-wrap gap-1 mt-1.5"><span className="px-1 py-0.5 bg-slate-100 text-slate-500 rounded text-[7px] font-black uppercase border border-slate-200">{activity.responsibleArea}</span>{activity.plantIds.map(pid => { const pName = plants.find(p => p.id.toUpperCase() === pid.toUpperCase())?.name || pid; return <span key={pid} className={`px-1 py-0.5 rounded text-[7px] font-black uppercase border ${pid.toUpperCase() === 'MOSQUERA' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>{pName}</span>; })}</div></td><td className="p-3 border-r border-slate-100 bg-white"><div className="text-slate-600 text-[10px] leading-snug line-clamp-2">{activity.relatedQuestions}</div></td><td className={`p-2 border-r border-slate-100 text-center`}><div className={`mx-auto px-1 py-0.5 rounded text-[9px] font-black border uppercase tracking-tighter ${yearStatus.color}`}>{yearStatus.label}</div></td>{renderPeriodicityCells(activity)}<td className="p-3 text-center sticky right-0 bg-white shadow-l border-l border-slate-100"><div className="flex flex-col items-center"><div className="text-[9px] font-black text-slate-700 mb-1">{progress.executed}/{progress.planned}</div><div className="w-10 h-1 bg-slate-100 rounded-full overflow-hidden border border-slate-200"><div className={`h-full ${yearStatus.status === 'DELAYED' ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${(progress.executed / (progress.planned || 1)) * 100}%` }}></div></div></div></td></tr>);
+                const missing = getMissingTasks(activity);
+                return (
+                  <tr key={activity.id} className="hover:bg-slate-50/30 transition-colors h-10">
+                    <td className="p-2 border-r border-slate-100 text-center font-black bg-white">{activity.subClause}</td>
+                    <td className="p-2 border-r border-slate-100 bg-white">
+                      <div className="font-bold text-slate-800 text-[9px] leading-tight line-clamp-1">{activity.clauseTitle}</div>
+                      <div className="text-[7px] text-slate-400 font-black uppercase mt-0.5">{activity.responsibleArea}</div>
+                    </td>
+                    <td className="p-2 border-r border-slate-100 bg-white">
+                      <div className="text-slate-600 text-[9px] line-clamp-2 italic font-medium">"{activity.relatedQuestions}"</div>
+                    </td>
+                    {renderPeriodicityCells(activity)}
+                    <td className="p-2 text-center sticky right-0 bg-white shadow-l border-l border-slate-100">
+                      <div className={`px-1 py-0.5 rounded text-[8px] font-black border ${missing.pending === 0 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                        {missing.pending === 0 ? 'LISTO' : `${missing.total - missing.pending}/${missing.total}`}
+                      </div>
+                    </td>
+                  </tr>
+                );
             })}
           </tbody>
         </table>
       </div>
 
       {modalOpen && activeActivity && activeMonthIndex !== null && (
-        <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm animate-in fade-in duration-300"><div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"><div className="p-6 bg-[#1e293b] text-white flex justify-between items-center shrink-0"><div className="flex items-center"><div className="p-3 bg-red-600 rounded-2xl mr-4 shadow-xl"><FileUp size={24} className="text-white" /></div><div><h3 className="text-lg font-black uppercase tracking-tight">Gestión de Evidencia</h3><p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.1em]">{MONTHS[activeMonthIndex]} {currentYear} • {activeActivity.clauseTitle}</p></div></div><button onClick={() => setModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full transition-all text-slate-400 hover:text-white"><X size={24} /></button></div><div className="flex-1 overflow-y-auto p-10 grid grid-cols-1 lg:grid-cols-2 gap-12 scrollbar-thin"><div className="space-y-8"><div className="bg-[#f8fafc] p-6 rounded-2xl border border-slate-100 space-y-5"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center"><Info size={14} className="mr-2" /> Estado de Entrega</h4>{activeEvidence ? (<div className="space-y-4"><div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm group"><div className="flex items-center"><FileText className="text-blue-500 mr-3" /><div className="overflow-hidden"><p className="text-xs font-black text-slate-800 truncate">{activeEvidence.fileName}</p><p className="text-[9px] text-slate-400 font-bold uppercase">Subido por {activeEvidence.uploadedBy}</p></div></div><button onClick={() => { if(activeEvidence.type==='LINK') window.open(activeEvidence.url,'_blank'); else {const link=document.createElement("a"); link.href=activeEvidence.url; link.download=activeEvidence.fileName; document.body.appendChild(link); link.click(); document.body.removeChild(link);}}} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-600"><ExternalLink size={18} /></button></div><div className={`p-4 rounded-xl border flex items-start gap-3 bg-[#eff6ff] border-blue-100`}><Clock className="text-blue-600 mt-0.5" size={18} /><div><p className="text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1">Resultado de Revisión:</p><p className="text-xs font-semibold text-blue-900 leading-relaxed">"{activeEvidence.adminComment || 'Carga inicial de evidencia.'}"</p></div></div></div>) : (<div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-2xl"><Cloud size={32} className="mx-auto text-slate-300 mb-2" /><p className="text-[11px] text-slate-400 font-bold uppercase">Sin archivos en este periodo</p></div>)}</div><div className="space-y-5"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center px-1"><History size={14} className="mr-2" /> Historial de Versiones</h4><div className="space-y-4">{activeEvidence?.history?.map((log, idx) => (<div key={idx} className="flex gap-4"><div className="flex flex-col items-center"><div className={`w-2.5 h-2.5 rounded-full mt-1 ${log.status === 'APPROVED' ? 'bg-green-500' : log.status === 'REJECTED' ? 'bg-orange-500' : 'bg-blue-600'}`}></div><div className="w-px flex-1 bg-slate-100 mt-2"></div></div><div className="pb-4"><div className="flex items-center gap-3 mb-1"><p className="text-[10px] font-black text-slate-800 uppercase">{log.author}</p><p className="text-[10px] text-slate-400 font-bold">{log.date}</p></div><p className="text-[11px] text-slate-500 font-medium leading-relaxed">{log.text}</p></div></div>))}</div></div></div><div className="bg-[#f8fafc] p-8 rounded-3xl border border-slate-200"><h4 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-6 flex items-center"><ShieldCheck size={18} className="mr-2 text-red-600" /> Panel de Verificación</h4><p className="text-[11px] text-slate-500 mb-6 leading-relaxed font-medium">Como administrador/auditor, valide si el documento cumple con los requisitos normativos de la cláusula.</p><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Comentario de Validación</label><textarea value={adminComment} onChange={e => setAdminComment(e.target.value)} rows={6} className="w-full bg-white border border-slate-200 rounded-2xl p-5 text-xs font-semibold focus:border-red-600 transition-all outline-none shadow-sm" placeholder="Escriba los motivos de aprobación o rechazo..." /><div className="grid grid-cols-2 gap-4 mt-8"><button onClick={() => handleAdminVerification('REJECTED')} className="py-4 bg-[#fef3c7] text-[#9a3412] rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-[#ffedd5] transition-all border border-[#fde68a]">Rechazar</button><button onClick={() => handleAdminVerification('APPROVED')} className="py-4 bg-[#22c55e] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-[#16a34a] transition-all shadow-lg shadow-green-200">Aprobar Evidencia</button></div></div></div><div className="p-6 bg-white border-t border-slate-100 flex justify-end"><button onClick={() => setModalOpen(false)} className="px-10 py-3 bg-[#0f172a] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all">Cerrar</button></div></div></div>
-      )}
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div 
+            style={{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }}
+            className="bg-white rounded-3xl shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 shadow-2xl relative"
+          >
+            <div 
+              onMouseDown={handleMouseDown}
+              className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0 cursor-move active:cursor-grabbing select-none"
+            >
+              <div className="flex items-center">
+                <div className="p-2.5 bg-red-600 rounded-2xl mr-4 shadow-lg shadow-red-900/40">
+                  <FileUp size={22} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-tight leading-none mb-1">Gestión de Evidencia</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{MONTHS[activeMonthIndex]} {currentYear}</span>
+                    <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest truncate max-w-[300px]">{activeActivity.clauseTitle}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-slate-800 rounded-lg text-slate-500"><Move size={14} /></div>
+                <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-red-600 transition-colors rounded-xl text-white/50 hover:text-white"><X size={20} /></button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 scrollbar-thin">
+              <div className="space-y-6">
+                <div className="bg-[#f8fafc] p-5 rounded-2xl border border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                      <Cloud size={14} className="mr-2" /> Método de Entrega
+                    </h4>
+                    <div className="flex bg-slate-200 p-1 rounded-lg">
+                      <button onClick={() => setUploadTab('FILE')} className={`px-2 py-1 text-[8px] font-black rounded ${uploadTab === 'FILE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>ARCHIVO</button>
+                      <button onClick={() => setUploadTab('LINK')} className={`px-2 py-1 text-[8px] font-black rounded ${uploadTab === 'LINK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>ENLACE</button>
+                    </div>
+                  </div>
 
-      {/* MODAL DE INFORMACIÓN DEL REQUISITO - 100% DATOS RESTAURADOS */}
+                  {activeEvidence ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center">
+                          {activeEvidence.type === 'FILE' ? <FileText className="text-blue-500 mr-3" size={20} /> : <Globe className="text-purple-500 mr-3" size={20} />}
+                          <div className="overflow-hidden">
+                            <p className="text-[11px] font-black text-slate-800 truncate leading-none mb-1">{activeEvidence.fileName}</p>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">Subido por {activeEvidence.uploadedBy}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => window.open(activeEvidence.url, '_blank')} className="p-2 bg-slate-50 hover:bg-slate-900 text-slate-600 hover:text-white rounded-xl transition-all shadow-sm border border-slate-100">
+                          <ExternalLink size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    uploadTab === 'FILE' ? (
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-10 text-center border-2 border-dashed border-slate-200 rounded-3xl hover:bg-blue-50/50 hover:border-blue-400 transition-all cursor-pointer group"
+                      >
+                        <input type="file" ref={fileInputRef} onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if(f) handleEvidenceSubmit('FILE', 'mock_url_'+f.name, f.name);
+                        }} className="hidden" />
+                        <Upload size={32} className="mx-auto text-slate-300 mb-3 group-hover:text-blue-500 transition-transform group-hover:-translate-y-1" />
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest group-hover:text-blue-600">Click para adjuntar del PC</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-white rounded-2xl border border-slate-200">
+                          <div className="flex items-center gap-3 mb-3">
+                            {/* Logo Restaurado (Foto 3) */}
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-5 h-5" alt="OneDrive" />
+                            <span className="text-[10px] font-black uppercase tracking-tighter text-slate-700">OneDrive / Link Corporativo</span>
+                          </div>
+                          
+                          <div className="space-y-3">
+                             <button 
+                              onClick={() => setShowOneDrivePicker(true)}
+                              className="w-full flex items-center justify-center gap-2 py-4 bg-[#0078d4] text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-blue-200 hover:bg-[#005a9e] transition-all"
+                            >
+                               <ExternalLink size={14} /> Seleccionar de OneDrive
+                            </button>
+                            
+                            <div className="relative flex items-center py-2">
+                               <div className="flex-grow border-t border-slate-200"></div>
+                               <span className="flex-shrink mx-4 text-[8px] font-black text-slate-300 uppercase tracking-widest">o enlace manual</span>
+                               <div className="flex-grow border-t border-slate-200"></div>
+                            </div>
+
+                            <input 
+                              type="text" 
+                              placeholder="Pegue aquí el enlace compartido..." 
+                              value={externalUrl}
+                              onChange={(e) => setExternalUrl(e.target.value)}
+                              className="w-full bg-slate-50 p-3 rounded-xl border border-slate-100 text-[10px] font-bold outline-none focus:border-blue-500 transition-all"
+                            />
+                            
+                            <button 
+                              onClick={() => externalUrl && handleEvidenceSubmit('LINK', externalUrl)}
+                              className="w-full py-2 bg-slate-100 text-slate-600 text-[9px] font-black uppercase rounded-lg hover:bg-slate-200 transition-all"
+                            >
+                              Vincular URL Manual
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+                
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center px-1"><History size={14} className="mr-2" /> Historial de Cambios</h4>
+                  <div className="space-y-3 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
+                    {activeEvidence?.history?.map((log, idx) => (
+                      <div key={idx} className="flex gap-3 text-[10px] p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${log.status === 'APPROVED' ? 'bg-green-500' : log.status === 'REJECTED' ? 'bg-orange-500' : 'bg-blue-600'}`}></div>
+                        <div>
+                          <p className="font-black text-slate-800 uppercase leading-none mb-1">{log.author} <span className="text-slate-400 mx-1">•</span> <span className="text-slate-400">{log.date}</span></p>
+                          <p className="text-slate-500 font-medium leading-relaxed italic">"{log.text}"</p>
+                        </div>
+                      </div>
+                    ))}
+                    {!activeEvidence && <p className="text-[10px] text-slate-400 italic text-center py-4">Sin registros previos.</p>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#f8fafc] p-6 rounded-3xl border-2 border-slate-100 flex flex-col shadow-inner">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm"><ShieldCheck size={20} className="text-red-600" /></div>
+                  <div>
+                    <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">Verificación Auditora</h4>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Panel de Validación Normativa</p>
+                  </div>
+                </div>
+                
+                <textarea 
+                  value={adminComment} 
+                  onChange={e => setAdminComment(e.target.value)} 
+                  rows={6} 
+                  className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-[11px] font-bold text-slate-700 focus:border-red-600 transition-all outline-none shadow-sm flex-1 resize-none mb-4" 
+                  placeholder="Describa motivos técnicos de aprobación o rechazo..." 
+                />
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <button onClick={() => handleAdminVerification('REJECTED')} className="py-4 bg-orange-100 hover:bg-orange-200 text-orange-800 rounded-2xl text-[10px] font-black uppercase border border-orange-200 transition-all flex items-center justify-center gap-2">
+                    <X size={16} /> Rechazar
+                  </button>
+                  <button onClick={() => handleAdminVerification('APPROVED')} className="py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-green-200 transition-all flex items-center justify-center gap-2">
+                    <CheckCircle size={16} /> Aprobar
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-5 bg-white border-t border-slate-100 flex justify-end">
+              <button onClick={() => setModalOpen(false)} className="px-10 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl">Cerrar Panel</button>
+            </div>
+
+            {/* SIMULADOR DE ONEDRIVE PICKER - Mejorado (Foto 4) */}
+            {showOneDrivePicker && (
+              <div className="absolute inset-0 z-[10000] bg-white animate-in slide-in-from-bottom duration-300 flex flex-col">
+                <div className="p-4 bg-[#f3f2f1] border-b flex justify-between items-center shrink-0">
+                   <div className="flex items-center gap-3">
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-5 h-5" alt="OneDrive" />
+                      <span className="text-[11px] font-black uppercase tracking-tight text-slate-700">Explorador de OneDrive</span>
+                   </div>
+                   <button onClick={() => setShowOneDrivePicker(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={18} /></button>
+                </div>
+
+                {!isOneDriveAuthenticated ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-10 bg-[#faf9f8]">
+                     <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg" className="w-16 h-16 mb-6" alt="OneDrive" />
+                     <h4 className="text-lg font-bold text-slate-800 mb-2">Inicia sesión en Microsoft</h4>
+                     <p className="text-xs text-slate-500 mb-6 text-center max-w-xs">Para vincular archivos directamente desde su nube corporativa de Microsoft 365.</p>
+                     
+                     <button 
+                      onClick={handleOneDriveLogin}
+                      disabled={isOneDriveLoggingIn}
+                      className="flex items-center gap-3 px-8 py-3 bg-white border border-slate-300 shadow-sm rounded hover:bg-slate-50 transition-all font-semibold text-sm"
+                     >
+                       {isOneDriveLoggingIn ? (
+                         <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                       ) : (
+                         <>
+                           <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" className="w-5" alt="MS" />
+                           Iniciar sesión
+                         </>
+                       )}
+                     </button>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="p-3 border-b flex gap-3 items-center shrink-0">
+                       <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                          <input type="text" placeholder="Buscar en mis archivos..." className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded text-xs focus:bg-white focus:border-blue-500 outline-none" />
+                       </div>
+                       <div className="flex items-center gap-2 px-3 text-[10px] font-bold text-slate-600 bg-slate-100 rounded-full">
+                          <UserCircle className="text-blue-600" size={14} /> {currentUser.name}
+                       </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-4 scrollbar-thin bg-white">
+                       <div className="grid grid-cols-1 gap-1">
+                          {/* Carpeta para Regresar (Foto 4: Carpeta Azul) */}
+                          {currentFolderPath.length > 1 && (
+                            <div 
+                              onClick={goBackOneDrive}
+                              className="flex items-center p-3 text-blue-600 text-[10px] font-black uppercase hover:bg-blue-50 cursor-pointer rounded border border-blue-100 mb-2 transition-all"
+                            >
+                               <div className="p-2 bg-blue-100 rounded-lg mr-3 shadow-sm">
+                                  <ChevronLeft size={16} />
+                                </div>
+                               Regresar / Subir de Nivel
+                            </div>
+                          )}
+
+                          <div className="flex items-center p-2 text-slate-400 text-[9px] font-black uppercase tracking-widest mb-2 border-b border-slate-100">
+                             Ruta: {currentFolderPath.join(' / ')}
+                          </div>
+
+                          {getCurrentFiles().map(file => (
+                             <div 
+                              key={file.id} 
+                              onClick={() => selectOneDriveFile(file)}
+                              className={`flex items-center justify-between p-4 border border-transparent hover:border-blue-200 hover:bg-blue-50 cursor-pointer rounded-2xl transition-all group shadow-sm mb-1 ${file.type === 'folder' ? 'bg-slate-50/50' : 'bg-white'}`}
+                             >
+                                <div className="flex items-center">
+                                   <div className={`p-2.5 rounded-xl mr-4 shadow-sm ${
+                                      file.type === 'folder' ? 'bg-blue-600 text-white' : 
+                                      file.type === 'pdf' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+                                   }`}>
+                                      {file.type === 'folder' ? <Folder size={20} /> : <FileText size={20} />}
+                                   </div>
+                                   <div>
+                                      <p className={`text-[11px] font-black uppercase tracking-tight group-hover:text-blue-700 ${file.type === 'folder' ? 'text-blue-600' : 'text-slate-700'}`}>
+                                        {file.name}
+                                      </p>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                                        {file.type === 'folder' ? 'Directorio corporativo' : `Modificado: Ayer • ${file.size}`}
+                                      </p>
+                                   </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {file.type === 'folder' && <span className="text-[8px] font-black text-blue-400 uppercase mr-2">Abrir</span>}
+                                  <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-500 transform translate-x-0 group-hover:translate-x-1 transition-all" />
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                    <div className="p-4 bg-slate-50 border-t flex justify-end">
+                       <button onClick={() => setShowOneDrivePicker(false)} className="px-8 py-2.5 bg-white border border-slate-300 rounded-xl text-[10px] font-black uppercase text-slate-500 hover:text-slate-800 shadow-sm transition-all">Cancelar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       {infoModalOpen && activeActivity && (
-        <div className="fixed inset-0 bg-slate-950/85 flex items-start justify-center z-[9999] p-4 pt-10 backdrop-blur-md overflow-hidden animate-in fade-in duration-300">
-          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col animate-in slide-in-from-top-4 duration-300 border border-slate-200 overflow-hidden">
-             {/* Cabecera Pro */}
-             <div className="p-8 bg-[#1e293b] text-white flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 bg-slate-950/70 flex items-start justify-center z-[9999] p-4 pt-10 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-top-4 duration-300 border border-slate-200 overflow-hidden">
+             <div className="p-6 bg-[#1e293b] text-white flex justify-between items-center shrink-0">
                 <div className="flex items-center">
-                   <div className="p-4 bg-red-600 rounded-3xl mr-6 shadow-2xl shadow-red-900/40">
-                     <BookOpen size={32} className="text-white" />
+                   <div className="p-3 bg-red-600 rounded-xl mr-4 shadow-xl">
+                     <BookOpen size={24} className="text-white" />
                    </div>
                    <div>
-                      <h3 className="text-xl font-black leading-tight tracking-tight uppercase max-w-xl line-clamp-2">{activeActivity.clauseTitle}</h3>
-                      <div className="flex gap-2 mt-3">
-                        <span className="text-blue-200 text-[10px] font-black uppercase tracking-[0.2em] bg-blue-900/60 px-4 py-1.5 rounded-full border border-blue-700/50">Norma: {activeActivity.clause}</span>
-                        <span className="text-slate-300 text-[10px] font-black uppercase tracking-[0.2em] bg-slate-800 px-4 py-1.5 rounded-full border border-slate-700">Sub-Numeral: {activeActivity.subClause}</span>
+                      <h3 className="text-sm font-black leading-tight tracking-tight uppercase line-clamp-2">{activeActivity.clauseTitle}</h3>
+                      <div className="flex gap-2 mt-2">
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-blue-900/60 px-2 py-1 rounded border border-blue-700/50">Numeral: {activeActivity.subClause}</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-slate-800 px-2 py-1 rounded border border-slate-700">{activeActivity.periodicity}</span>
                       </div>
                    </div>
                 </div>
-                <button onClick={() => setInfoModalOpen(false)} className="p-2.5 hover:bg-slate-700 rounded-full transition-all text-slate-400 hover:text-white">
-                  <X size={32} />
-                </button>
+                <button onClick={() => setInfoModalOpen(false)} className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white"><X size={24} /></button>
              </div>
-
-             <div className="p-10 space-y-10 overflow-y-auto scrollbar-thin bg-white flex-1">
-                {/* Metadatos Dinámicos restaurados */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-2">
-                    <div className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest"><Layers size={14} /> Responsable</div>
-                    <div className="text-xs font-black text-slate-800 uppercase">{activeActivity.responsibleArea}</div>
-                  </div>
-                  <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-2">
-                    <div className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest"><Clock size={14} /> Periodicidad</div>
-                    <div className="text-xs font-black text-slate-800 uppercase">{activeActivity.periodicity}</div>
-                  </div>
-                  <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-2">
-                    <div className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest"><BadgeCheck size={14} /> Normas Aplicables</div>
-                    <div className="flex flex-wrap gap-1">
-                      {activeActivity.standards.map(s => {
-                        const Icon = getStandardIcon(s);
-                        return <span key={s} className="flex items-center gap-1.5 text-[8px] font-black bg-blue-100 text-blue-600 px-2 py-1 rounded-lg border border-blue-200 uppercase"><Icon size={10}/>{s}</span>
-                      })}
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-2">
-                    <div className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest"><MapPin size={14} /> Sedes / Plantas</div>
-                    <div className="flex flex-wrap gap-1">
-                      {activeActivity.plantIds.map(pid => {
-                        const plant = plants.find(p => p.id.toUpperCase() === pid.toUpperCase());
-                        return <span key={pid} className={`text-[8px] font-black px-2 py-1 rounded-lg border uppercase ${pid.toUpperCase() === 'MOSQUERA' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{plant?.name || pid}</span>
-                      })}
-                    </div>
-                  </div>
+             <div className="p-6 space-y-6 overflow-y-auto scrollbar-thin flex-1">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-[11px] text-slate-600 leading-relaxed italic font-medium">
+                  <div className="flex items-center text-slate-400 font-black text-[9px] uppercase tracking-widest mb-3"><ShieldCheck size={14} className="mr-2" /> Descripción</div>
+                  "{activeActivity.description}"
                 </div>
-
-                {/* Secciones de Texto Oficial */}
-                <div className="space-y-4">
-                   <div className="flex items-center text-slate-400 font-black text-[10px] uppercase tracking-[0.3em] px-2"><ShieldCheck size={16} className="mr-3 text-slate-300" /> Descripción Oficial del Estándar</div>
-                   <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 text-[14px] text-slate-600 leading-relaxed italic font-medium relative">
-                     <div className="absolute top-4 left-4 text-slate-200"><BookOpen size={24} /></div>
-                     <span className="relative z-10 block pl-8">"{activeActivity.description}"</span>
-                   </div>
+                <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100/50 text-[11px] text-slate-800 leading-relaxed font-semibold">
+                  <div className="flex items-center text-blue-600 font-black text-[9px] uppercase tracking-widest mb-3"><Target size={14} className="mr-2" /> Contexto Interno</div>
+                  {activeActivity.contextualization}
                 </div>
-
-                <div className="space-y-4">
-                   <div className="flex items-center text-blue-600 font-black text-[10px] uppercase tracking-[0.3em] px-2"><Target size={16} className="mr-3 opacity-50" /> Explicación y Contexto</div>
-                   <div className="bg-blue-50/30 p-8 rounded-[2.5rem] border border-blue-100/50 text-[14px] text-slate-800 leading-relaxed font-semibold">
-                     {activeActivity.contextualization}
-                   </div>
-                </div>
-
-                <div className="space-y-4">
-                   <div className="flex items-center text-orange-600 font-black text-[10px] uppercase tracking-[0.3em] px-2"><BadgeCheck size={16} className="mr-3 opacity-50" /> Tarea Específica / Criterio de Auditoría</div>
-                   <div className="bg-orange-50/30 p-8 rounded-[2.5rem] border border-orange-100/50 text-[14px] text-orange-950 font-black">
-                     {activeActivity.relatedQuestions}
-                   </div>
+                <div className="bg-orange-50/30 p-6 rounded-2xl border border-orange-100/50 text-[11px] text-orange-950 font-black">
+                  <div className="flex items-center text-orange-600 font-black text-[9px] uppercase tracking-widest mb-3"><BadgeCheck size={14} className="mr-2" /> Criterio de Auditoría</div>
+                  {activeActivity.relatedQuestions}
                 </div>
              </div>
-
-             <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0 gap-4">
-                <div className="flex-1 flex items-center">
-                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center"><Info size={14} className="mr-2" /> ID Registro: {activeActivity.id}</span>
-                </div>
-                <button onClick={() => setInfoModalOpen(false)} className="px-12 py-4 bg-[#0f172a] text-white rounded-[1.5rem] text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl active:scale-95 flex items-center gap-3">
-                  Cerrar Consulta
-                  <ArrowRight size={18} />
-                </button>
+             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button onClick={() => setInfoModalOpen(false)} className="px-8 py-3 bg-[#0f172a] text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2">Cerrar Consulta <ArrowRight size={14}/></button>
              </div>
           </div>
         </div>

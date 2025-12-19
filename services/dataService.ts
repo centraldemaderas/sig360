@@ -1,8 +1,7 @@
-
 import { db, USE_CLOUD_DB } from '../firebaseConfig';
-import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, getDocs, where, orderBy, limit, writeBatch } from 'firebase/firestore';
-import { Activity, User, StandardDefinition, AppSettings, StandardType, Notification, UserRole, Plant, Area } from '../types';
-import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS, AREAS } from '../constants';
+import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, query, where } from 'firebase/firestore';
+import { Activity, User, StandardDefinition, AppSettings, Notification, Plant, Area } from '../types';
+import { MOCK_ACTIVITIES_GERENCIA, MOCK_USERS } from '../constants';
 
 const COLL_ACTIVITIES = 'activities';
 const COLL_USERS = 'users';
@@ -17,101 +16,41 @@ class DataService {
   
   private cleanPlantIds(pids: string[] | undefined): string[] {
     if (!pids || !Array.isArray(pids)) return ['MOSQUERA'];
-    
-    const cleaned = pids
-      .map(id => String(id || '').trim().toUpperCase())
-      .map(id => (id === 'PLT-MOSQUERA' || id === 'MOSQUERA') ? 'MOSQUERA' : id)
-      .filter(id => id !== '');
-    
-    if (!cleaned.includes('MOSQUERA')) cleaned.push('MOSQUERA');
-    
+    const cleaned = pids.map(id => String(id || '').trim().toUpperCase()).filter(id => id !== '');
+    if (cleaned.length === 0) return ['MOSQUERA'];
     return Array.from(new Set(cleaned));
   }
 
   subscribeToActivities(onUpdate: (data: Activity[]) => void, onError?: (error: any) => void) {
     if (USE_CLOUD_DB && db) {
-      const q = query(collection(db, COLL_ACTIVITIES));
-      return onSnapshot(q, 
-        (querySnapshot) => {
-          const activities: Activity[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data() as Activity;
-            activities.push({ 
-              ...data, 
-              id: doc.id, 
-              plantIds: this.cleanPlantIds(data.plantIds) 
-            } as Activity);
-          });
-          onUpdate(activities);
+      return onSnapshot(collection(db, COLL_ACTIVITIES), 
+        (snap) => {
+          const acts = snap.docs.map(d => ({ ...d.data(), id: d.id, plantIds: this.cleanPlantIds((d.data() as any).plantIds) } as Activity));
+          onUpdate(acts);
         },
-        (error) => {
-          console.error("Firestore Error (Activities):", error);
-          if (onError) onError(error);
-        }
+        (error) => { console.error("Error Actividades:", error); if (onError) onError(error); }
       );
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_activities');
-        if (saved) {
-          const parsed = JSON.parse(saved).map((a: any) => ({ 
-            ...a, 
-            plantIds: this.cleanPlantIds(a.plantIds) 
-          }));
-          onUpdate(parsed);
-        } else {
-          onUpdate(MOCK_ACTIVITIES_GERENCIA.map(a => ({ ...a, plantIds: ['MOSQUERA'] })));
-        }
+        onUpdate(saved ? JSON.parse(saved) : MOCK_ACTIVITIES_GERENCIA);
       };
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
-    }
-  }
-
-  subscribeToUsers(onUpdate: (data: User[]) => void, onError?: (error: any) => void) {
-    if (USE_CLOUD_DB && db) {
-      const q = query(collection(db, COLL_USERS));
-      return onSnapshot(q, 
-        (querySnapshot) => {
-          const users: User[] = [];
-          querySnapshot.forEach((doc) => {
-            users.push({ ...doc.data(), id: doc.id } as User);
-          });
-          onUpdate(users);
-        },
-        (error) => {
-          if (onError) onError(error);
-        }
-      );
-    } else {
-      const load = () => {
-        const saved = localStorage.getItem('app_users');
-        if (saved) {
-          onUpdate(JSON.parse(saved));
-        } else {
-          onUpdate(MOCK_USERS);
-        }
-      };
-      load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
   subscribeToNotifications(userId: string, onUpdate: (data: Notification[]) => void) {
     if (USE_CLOUD_DB && db) {
-      const q = query(
-        collection(db, COLL_NOTIFICATIONS),
-        where('userId', '==', userId),
-        orderBy('date', 'desc'),
-        limit(50)
-      );
-      return onSnapshot(q, (snapshot) => {
-        const notifs: Notification[] = [];
-        snapshot.forEach(doc => notifs.push({ ...doc.data(), id: doc.id } as Notification));
-        onUpdate(notifs);
+      // FIX: Solo filtro básico para evitar errores de 'failed-precondition'
+      const q = query(collection(db, COLL_NOTIFICATIONS), where('userId', '==', userId));
+      return onSnapshot(q, (snap) => {
+        const notifs = snap.docs.map(d => ({ ...d.data(), id: d.id } as Notification));
+        notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        onUpdate(notifs.slice(0, 50));
+      }, (err) => {
+        console.error("Error Notificaciones:", err);
       });
     } else {
       const load = () => {
@@ -119,141 +58,97 @@ class DataService {
         onUpdate(saved ? JSON.parse(saved) : []);
       };
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
-  subscribeToStandards(onUpdate: (data: StandardDefinition[]) => void) {
+  subscribeToUsers(onUpdate: (data: User[]) => void) {
     if (USE_CLOUD_DB && db) {
-      const q = query(collection(db, COLL_STANDARDS));
-      return onSnapshot(q, (snapshot) => {
-        const stds: StandardDefinition[] = [];
-        snapshot.forEach(doc => stds.push({ ...doc.data(), id: doc.id } as StandardDefinition));
-        stds.sort((a, b) => a.type.localeCompare(b.type));
-        onUpdate(stds);
+      return onSnapshot(collection(db, COLL_USERS), (snap) => {
+        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as User)));
       });
     } else {
       const load = () => {
-        const saved = localStorage.getItem('app_standards');
-        if (saved) {
-          onUpdate(JSON.parse(saved));
-        } else {
-          onUpdate([]);
-        }
+        const saved = localStorage.getItem('app_users');
+        onUpdate(saved ? JSON.parse(saved) : MOCK_USERS);
       };
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
   subscribeToPlants(onUpdate: (data: Plant[]) => void) {
     if (USE_CLOUD_DB && db) {
-      const q = query(collection(db, COLL_PLANTS));
-      return onSnapshot(q, (snapshot) => {
-        const plants: Plant[] = [];
-        snapshot.forEach(doc => plants.push({ ...doc.data(), id: doc.id } as Plant));
-        plants.sort((a, b) => {
-          if (a.isMain) return -1;
-          if (b.isMain) return 1;
-          return a.name.localeCompare(b.name);
-        });
-        onUpdate(plants);
+      return onSnapshot(collection(db, COLL_PLANTS), (snap) => {
+        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Plant)));
       });
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_plants');
-        let plants = saved ? JSON.parse(saved) : [];
-        plants.sort((a: Plant, b: Plant) => {
-          if (a.isMain) return -1;
-          if (b.isMain) return 1;
-          return a.name.localeCompare(b.name);
-        });
-        onUpdate(plants);
+        onUpdate(saved ? JSON.parse(saved) : []);
       };
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
   subscribeToAreas(onUpdate: (data: Area[]) => void) {
     if (USE_CLOUD_DB && db) {
-      const q = query(collection(db, COLL_AREAS), orderBy('name', 'asc'));
-      return onSnapshot(q, (snapshot) => {
-        const areas: Area[] = [];
-        snapshot.forEach(doc => areas.push({ ...doc.data(), id: doc.id } as Area));
-        onUpdate(areas);
+      return onSnapshot(collection(db, COLL_AREAS), (snap) => {
+        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as Area)));
       });
     } else {
       const load = () => {
         const saved = localStorage.getItem('app_areas');
-        if (saved) {
-          onUpdate(JSON.parse(saved));
-        } else {
-          onUpdate(AREAS.map(a => ({ id: `area-${a.toLowerCase()}`, name: a })));
-        }
+        onUpdate(saved ? JSON.parse(saved) : []);
       };
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
+    }
+  }
+
+  subscribeToStandards(onUpdate: (data: StandardDefinition[]) => void) {
+    if (USE_CLOUD_DB && db) {
+      return onSnapshot(collection(db, COLL_STANDARDS), (snap) => {
+        onUpdate(snap.docs.map(d => ({ ...d.data(), id: d.id } as StandardDefinition)));
+      });
+    } else {
+      const load = () => {
+        const saved = localStorage.getItem('app_standards');
+        onUpdate(saved ? JSON.parse(saved) : []);
+      };
+      load();
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
   subscribeToSettings(onUpdate: (data: AppSettings) => void) {
     if (USE_CLOUD_DB && db) {
-      return onSnapshot(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), (doc) => {
-        if (doc.exists()) {
-          onUpdate(doc.data() as AppSettings);
-        } else {
-          onUpdate({ companyLogo: null });
-        }
+      return onSnapshot(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), (d) => {
+        onUpdate(d.exists() ? (d.data() as AppSettings) : { companyLogo: null });
       });
     } else {
-      const load = () => {
-        const saved = localStorage.getItem('company_logo');
-        onUpdate({ companyLogo: saved || null });
-      };
+      const load = () => onUpdate({ companyLogo: localStorage.getItem('company_logo') });
       load();
-      const listener = () => load();
-      window.addEventListener('local-data-changed', listener);
-      return () => window.removeEventListener('local-data-changed', listener);
+      window.addEventListener('local-data-changed', load);
+      return () => window.removeEventListener('local-data-changed', load);
     }
   }
 
-  async createNotification(notif: Omit<Notification, 'id'>) {
-    const usersSnapshot = await this.getUsersOnce();
-    const targetUser = usersSnapshot.find(u => u.id === notif.userId);
-    
-    if (targetUser && targetUser.notifications) {
-      const prefs = targetUser.notifications;
-      let shouldNotify = false;
-
-      if (notif.type === 'REJECTION' && prefs.notifyOnRejection) shouldNotify = true;
-      if (notif.type === 'APPROVAL' && prefs.notifyOnApproval) shouldNotify = true;
-      if (notif.type === 'NEW_UPLOAD' && prefs.notifyOnNewUpload) shouldNotify = true;
-      if (notif.type === 'SYSTEM') shouldNotify = true;
-
-      if (!shouldNotify) return;
-
-      if (prefs.emailEnabled) {
-        console.log(`%c[EMAIL SIMULATOR] Sending email to: ${targetUser.email}\nSubject: ${notif.title}\nMessage: ${notif.message}`, "color: #2563eb; font-weight: bold;");
-      }
-    }
-
+  async updateSettings(settings: AppSettings) {
+    const data = this.cleanData(settings);
     if (USE_CLOUD_DB && db) {
-      const docRef = doc(collection(db, COLL_NOTIFICATIONS));
-      await setDoc(docRef, this.cleanData(notif));
+      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), data, { merge: true });
     } else {
-      const saved = localStorage.getItem(`notifs_${notif.userId}`);
-      const current: Notification[] = saved ? JSON.parse(saved) : [];
-      const updated = [{ ...notif, id: `notif-${Date.now()}` }, ...current].slice(0, 50);
-      localStorage.setItem(`notifs_${notif.userId}`, JSON.stringify(updated));
+      if (data.companyLogo !== undefined) {
+        if (data.companyLogo === null) localStorage.removeItem('company_logo');
+        else localStorage.setItem('company_logo', data.companyLogo);
+      }
       window.dispatchEvent(new Event('local-data-changed'));
     }
   }
@@ -264,44 +159,32 @@ class DataService {
     } else {
       const saved = localStorage.getItem(`notifs_${userId}`);
       if (saved) {
-        const current: Notification[] = JSON.parse(saved);
-        const updated = current.map(n => n.id === id ? { ...n, read: true } : n);
-        localStorage.setItem(`notifs_${userId}`, JSON.stringify(updated));
+        const notifs = JSON.parse(saved).map((n: any) => n.id === id ? { ...n, read: true } : n);
+        localStorage.setItem(`notifs_${userId}`, JSON.stringify(notifs));
         window.dispatchEvent(new Event('local-data-changed'));
       }
     }
   }
 
-  async getUsersOnce(): Promise<User[]> {
-    if (USE_CLOUD_DB && db) {
-      const snap = await getDocs(collection(db, COLL_USERS));
-      return snap.docs.map(d => ({ ...d.data(), id: d.id } as User));
-    } else {
-      return this.getLocalUsers();
-    }
-  }
-
   async addActivity(activity: Activity) {
-    const cleanAct = { ...activity, plantIds: this.cleanPlantIds(activity.plantIds) };
+    const data = this.cleanData({ ...activity, plantIds: this.cleanPlantIds(activity.plantIds) });
     if (USE_CLOUD_DB && db) {
-      const { id, ...data } = cleanAct; 
-      await setDoc(doc(db, COLL_ACTIVITIES, cleanAct.id), this.cleanData(data));
+      await setDoc(doc(db, COLL_ACTIVITIES, activity.id), data);
     } else {
-      const current = this.getLocalActivities();
-      const updated = [...current, cleanAct];
-      this.saveLocalActivities(updated);
+      const current = JSON.parse(localStorage.getItem('app_activities') || '[]');
+      localStorage.setItem('app_activities', JSON.stringify([...current, data]));
+      window.dispatchEvent(new Event('local-data-changed'));
     }
   }
 
   async updateActivity(activity: Activity) {
-    const cleanAct = { ...activity, plantIds: this.cleanPlantIds(activity.plantIds) };
+    const data = this.cleanData(activity);
     if (USE_CLOUD_DB && db) {
-      const { id, ...data } = cleanAct;
-      await updateDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(data));
+      await updateDoc(doc(db, COLL_ACTIVITIES, activity.id), data);
     } else {
-      const current = this.getLocalActivities();
-      const updated = current.map(a => a.id === cleanAct.id ? cleanAct : a);
-      this.saveLocalActivities(updated);
+      const current = JSON.parse(localStorage.getItem('app_activities') || '[]');
+      localStorage.setItem('app_activities', JSON.stringify(current.map((a: any) => a.id === activity.id ? data : a)));
+      window.dispatchEvent(new Event('local-data-changed'));
     }
   }
 
@@ -309,259 +192,60 @@ class DataService {
     if (USE_CLOUD_DB && db) {
       await deleteDoc(doc(db, COLL_ACTIVITIES, id));
     } else {
-      const current = this.getLocalActivities();
-      this.saveLocalActivities(current.filter(a => a.id !== id));
-    }
-  }
-
-  async deleteAllActivities() {
-    if (USE_CLOUD_DB && db) {
-      const querySnapshot = await getDocs(collection(db, COLL_ACTIVITIES));
-      const batch = writeBatch(db);
-      querySnapshot.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-      console.log("Todas las actividades eliminadas de la nube.");
-    } else {
-      localStorage.removeItem('app_activities');
+      const current = JSON.parse(localStorage.getItem('app_activities') || '[]');
+      localStorage.setItem('app_activities', JSON.stringify(current.filter((a: any) => a.id !== id)));
       window.dispatchEvent(new Event('local-data-changed'));
     }
   }
 
-  async addUser(user: User) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = user;
-      await setDoc(doc(db, COLL_USERS, user.id), this.cleanData(data));
-    } else {
-      const current = this.getLocalUsers();
-      this.saveLocalUsers([...current, user]);
-    }
+  async addPlant(p: Plant) {
+    if (USE_CLOUD_DB && db) await setDoc(doc(db, COLL_PLANTS, p.id), this.cleanData(p));
   }
-
-  async updateUser(user: User) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = user;
-      await updateDoc(doc(db, COLL_USERS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalUsers();
-      this.saveLocalUsers(current.map(u => u.id === user.id ? user : u));
-    }
+  async updatePlant(p: Plant) {
+    if (USE_CLOUD_DB && db) await updateDoc(doc(db, COLL_PLANTS, p.id), this.cleanData(p));
   }
-
-  async deleteUser(id: string) {
-    if (USE_CLOUD_DB && db) {
-      await deleteDoc(doc(db, COLL_USERS, id));
-    } else {
-      const current = this.getLocalUsers();
-      this.saveLocalUsers(current.filter(u => u.id !== id));
-    }
-  }
-
-  async addPlant(plant: Plant) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = plant;
-      await setDoc(doc(db, COLL_PLANTS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalPlants();
-      this.saveLocalPlants([...current, plant]);
-    }
-  }
-
-  async updatePlant(plant: Plant) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = plant;
-      await updateDoc(doc(db, COLL_PLANTS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalPlants();
-      this.saveLocalPlants(current.map(p => p.id === plant.id ? plant : p));
-    }
-  }
-
   async deletePlant(id: string) {
-    if (USE_CLOUD_DB && db) {
-      await deleteDoc(doc(db, COLL_PLANTS, id));
-    } else {
-      const current = this.getLocalPlants();
-      this.saveLocalPlants(current.filter(p => p.id !== id));
-    }
+    if (USE_CLOUD_DB && db) await deleteDoc(doc(db, COLL_PLANTS, id));
   }
 
-  async addArea(area: Area) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = area;
-      await setDoc(doc(db, COLL_AREAS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalAreas();
-      this.saveLocalAreas([...current, area]);
-    }
+  async addArea(a: Area) {
+    if (USE_CLOUD_DB && db) await setDoc(doc(db, COLL_AREAS, a.id), this.cleanData(a));
   }
-
-  async updateArea(area: Area) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = area;
-      await updateDoc(doc(db, COLL_AREAS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalAreas();
-      this.saveLocalAreas(current.map(a => a.id === area.id ? area : a));
-    }
+  async updateArea(a: Area) {
+    if (USE_CLOUD_DB && db) await updateDoc(doc(db, COLL_AREAS, a.id), this.cleanData(a));
   }
-
   async deleteArea(id: string) {
-    if (USE_CLOUD_DB && db) {
-      await deleteDoc(doc(db, COLL_AREAS, id));
-    } else {
-      const current = this.getLocalAreas();
-      this.saveLocalAreas(current.filter(a => a.id !== id));
-    }
+    if (USE_CLOUD_DB && db) await deleteDoc(doc(db, COLL_AREAS, id));
   }
 
-  async addStandard(std: StandardDefinition) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = std;
-      await setDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalStandards();
-      this.saveLocalStandards([...current, std]);
-    }
+  async addStandard(s: StandardDefinition) {
+    if (USE_CLOUD_DB && db) await setDoc(doc(db, COLL_STANDARDS, s.id), this.cleanData(s));
+  }
+  async updateStandard(s: StandardDefinition) {
+    if (USE_CLOUD_DB && db) await updateDoc(doc(db, COLL_STANDARDS, s.id), this.cleanData(s));
   }
 
-  async updateStandard(std: StandardDefinition) {
-    if (USE_CLOUD_DB && db) {
-      const { id, ...data } = std;
-      await updateDoc(doc(db, COLL_STANDARDS, id), this.cleanData(data));
-    } else {
-      const current = this.getLocalStandards();
-      this.saveLocalStandards(current.map(s => s.id === std.id ? std : s));
-    }
+  async addUser(u: User) {
+    if (USE_CLOUD_DB && db) await setDoc(doc(db, COLL_USERS, u.id), this.cleanData(u));
   }
-
-  async updateSettings(settings: AppSettings) {
-    if (USE_CLOUD_DB && db) {
-      await setDoc(doc(db, COLL_SETTINGS, DOC_SETTINGS_GENERAL), this.cleanData(settings));
-    } else {
-      if (settings.companyLogo) localStorage.setItem('company_logo', settings.companyLogo);
-      else localStorage.removeItem('company_logo');
-      window.dispatchEvent(new Event('local-data-changed'));
-    }
+  async updateUser(u: User) {
+    if (USE_CLOUD_DB && db) await updateDoc(doc(db, COLL_USERS, u.id), this.cleanData(u));
+  }
+  async deleteUser(id: string) {
+    if (USE_CLOUD_DB && db) await deleteDoc(doc(db, COLL_USERS, id));
   }
 
   private cleanData(obj: any): any {
-    if (Array.isArray(obj)) return obj.map(item => this.cleanData(item));
-    else if (obj !== null && typeof obj === 'object') {
-      const newObj: any = {};
-      Object.keys(obj).forEach(key => {
-        const value = obj[key];
-        newObj[key] = value === undefined ? null : this.cleanData(value);
+    if (obj === null || obj === undefined) return null;
+    if (Array.isArray(obj)) return obj.map(v => this.cleanData(v));
+    if (typeof obj === 'object') {
+      const n: any = {};
+      Object.keys(obj).forEach(k => {
+        if (k !== 'id') n[k] = this.cleanData(obj[k]);
       });
-      return newObj;
+      return n;
     }
     return obj;
-  }
-
-  private getLocalActivities(): Activity[] {
-    const s = localStorage.getItem('app_activities');
-    return s ? JSON.parse(s).map((a: any) => ({ ...a, plantIds: this.cleanPlantIds(a.plantIds) })) : MOCK_ACTIVITIES_GERENCIA.map(a => ({ ...a, plantIds: ['MOSQUERA'] }));
-  }
-
-  private saveLocalActivities(data: Activity[]) {
-    localStorage.setItem('app_activities', JSON.stringify(data));
-    window.dispatchEvent(new Event('local-data-changed'));
-  }
-
-  private getLocalUsers(): User[] {
-    const s = localStorage.getItem('app_users');
-    return s ? JSON.parse(s) : MOCK_USERS;
-  }
-
-  private saveLocalUsers(data: User[]) {
-    localStorage.setItem('app_users', JSON.stringify(data));
-    window.dispatchEvent(new Event('local-data-changed'));
-  }
-
-  private getLocalStandards(): StandardDefinition[] {
-    const s = localStorage.getItem('app_standards');
-    return s ? JSON.parse(s) : [];
-  }
-
-  private saveLocalStandards(data: StandardDefinition[]) {
-    localStorage.setItem('app_standards', JSON.stringify(data));
-    window.dispatchEvent(new Event('local-data-changed'));
-  }
-
-  private getLocalPlants(): Plant[] {
-    const s = localStorage.getItem('app_plants');
-    return s ? JSON.parse(s) : [];
-  }
-
-  private saveLocalPlants(data: Plant[]) {
-    localStorage.setItem('app_plants', JSON.stringify(data));
-    window.dispatchEvent(new Event('local-data-changed'));
-  }
-
-  private getLocalAreas(): Area[] {
-    const s = localStorage.getItem('app_areas');
-    return s ? JSON.parse(s) : AREAS.map(a => ({ id: `area-${a.toLowerCase()}`, name: a }));
-  }
-
-  private saveLocalAreas(data: Area[]) {
-    localStorage.setItem('app_areas', JSON.stringify(data));
-    window.dispatchEvent(new Event('local-data-changed'));
-  }
-
-  public async seedInitialData() {
-    if (!USE_CLOUD_DB || !db) throw new Error("No hay conexión a la Nube");
-    
-    console.log("Iniciando carga de datos masiva...");
-    const batchPromises = [];
-
-    for (const act of MOCK_ACTIVITIES_GERENCIA) {
-       const { id, ...data } = act;
-       const activityWithPlant = { ...data, plantIds: ['MOSQUERA'] };
-       batchPromises.push(setDoc(doc(db, COLL_ACTIVITIES, id), this.cleanData(activityWithPlant)));
-    }
-
-    const seedUsers: User[] = [
-      { id: 'u-admin', name: 'Administrador SIG', email: 'admin@centralmaderas.com', role: UserRole.ADMIN, assignedArea: 'HSEQ', password: '123', notifications: { notifyOnRejection: true, notifyOnApproval: true, notifyOnNewUpload: true, emailEnabled: true } }
-    ];
-
-    for (const user of seedUsers) {
-       const { id, ...data } = user;
-       batchPromises.push(setDoc(doc(db, COLL_USERS, id), this.cleanData(data)));
-    }
-
-    const defaultStandards: StandardDefinition[] = [
-      { id: 'std-iso', type: StandardType.ISO9001, description: 'Sistemas de Gestión de Calidad.', objective: 'Mejora continua y satisfacción del cliente.', certifyingBody: 'ICONTEC', comments: [] },
-      { id: 'std-sst', type: StandardType.SGSST, description: 'Sistemas de Seguridad y Salud en el Trabajo.', objective: 'Prevención de riesgos laborales.', certifyingBody: 'ARL', comments: [] },
-      { id: 'std-fsc', type: StandardType.FSC, description: 'Manejo forestal responsable.', objective: 'Sustentabilidad ambiental.', certifyingBody: 'FSC Int.', comments: [] },
-      { id: 'std-pesv', type: StandardType.PESV, description: 'Plan Estratégico de Seguridad Vial.', objective: 'Reducción de accidentalidad vial.', certifyingBody: 'SuperTransporte', comments: [] }
-    ];
-
-    for (const std of defaultStandards) {
-      batchPromises.push(setDoc(doc(db, COLL_STANDARDS, std.id), this.cleanData(std)));
-    }
-
-    const initialPlants: Plant[] = [
-      { id: 'MOSQUERA', name: 'Mosquera', location: 'Cundinamarca', isMain: true, description: 'Sede Matriz Principal' },
-      { id: 'PLT-CARTAGENA', name: 'Cartagena', location: 'Bolívar', isMain: false, description: 'Planta de Producción Costa' },
-      { id: 'PLT-CALI', name: 'Cali', location: 'Valle del Cauca', isMain: false, description: 'Planta de Producción Occidente' },
-      { id: 'PLT-YALI', name: 'Yali', location: 'Antioquia', isMain: false, description: 'Planta de Extracción' },
-      { id: 'PLT-DILUVIO', name: 'Diluvio', location: 'Meta', isMain: false, description: 'Planta Operativa' },
-      { id: 'PLT-SOCIALWAY', name: 'SocialWay', location: 'N/A', isMain: false, description: 'Unidad de Negocio Social' },
-      { id: 'PLT-ECOCENTRAL', name: 'EcoCentral', location: 'N/A', isMain: false, description: 'Unidad de Reciclaje' }
-    ];
-
-    for (const plt of initialPlants) {
-      batchPromises.push(setDoc(doc(db, COLL_PLANTS, plt.id), this.cleanData(plt)));
-    }
-
-    const initialAreas: Area[] = AREAS.map(a => ({ id: `area-${a.toLowerCase().replace(/\s+/g, '-')}`, name: a }));
-    for (const area of initialAreas) {
-      batchPromises.push(setDoc(doc(db, COLL_AREAS, area.id), this.cleanData(area)));
-    }
-
-    await Promise.all(batchPromises);
-    console.log("¡Carga completada!");
   }
 }
 
