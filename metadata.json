@@ -3,6 +3,6 @@
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada para Firebase App Hosting y conectividad sig360.",
   "version": "1.4.4",
   "status": "PRODUCTION_READY",
-  "developerNotes": "Versión 1.4.4 validada para despliegue. Se han corregido las rutas del importmap eliminando módulos de servidor incompatibles. Configuración preparada para el entorno de compilación de Google Cloud Build.",
+  "developerNotes": "v1.4.4: Importmap saneado (Node modules removed). Se valida que el backend de App Hosting requiere el formato de conexión: 'projects/*/locations/*/connections/*/gitRepositoryLinks/*'. Configuración lista para re-vinculación en consola.",
   "requestFramePermissions": []
 }
