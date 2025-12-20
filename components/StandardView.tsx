@@ -81,11 +81,13 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+  const modalContainerRef = useRef<HTMLDivElement>(null);
 
   // Estados para Draggable (Modal de Visor/Preview)
   const [previewModalPos, setPreviewModalPos] = useState({ x: 0, y: 0 });
   const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const previewDragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+  const previewModalContainerRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,10 +106,53 @@ export const StandardView: React.FC<StandardViewProps> = ({
     }
   };
 
+  /**
+   * Ensure the modal never opens under the sidebar.
+   * If the modal's left edge is behind the `aside`, push it right until it clears it.
+   */
+  const ensureModalClearsSidebar = (
+    el: HTMLElement | null,
+    setPos: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>
+  ) => {
+    if (!el) return;
+    try {
+      const sidebar = document.querySelector('aside') as HTMLElement | null;
+      const sidebarRect = sidebar?.getBoundingClientRect();
+      if (!sidebarRect) return;
+
+      const modalRect = el.getBoundingClientRect();
+      const minLeft = Math.round(sidebarRect.right + 24); // 24px visual gap from sidebar
+      if (modalRect.left >= minLeft) return;
+
+      const delta = Math.ceil(minLeft - modalRect.left);
+      if (delta <= 0) return;
+      setPos((pos) => ({ ...pos, x: pos.x + delta }));
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     const unsub = dataService.subscribeToPlants(data => setPlants(data));
     return () => unsub();
   }, []);
+
+  // Auto-correct initial modal placement if it opens under the sidebar.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const raf = window.requestAnimationFrame(() => {
+      ensureModalClearsSidebar(modalContainerRef.current, setModalPos);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [modalOpen, modalPos.x]);
+
+  useEffect(() => {
+    if (!previewModalOpen) return;
+    const raf = window.requestAnimationFrame(() => {
+      ensureModalClearsSidebar(previewModalContainerRef.current, setPreviewModalPos);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [previewModalOpen, previewModalPos.x]);
 
   // Función crítica para convertir Base64 a Blob URL (Visualización Garantizada)
   const createBlobUrl = (dataUri: string) => {
@@ -626,6 +671,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       {modalOpen && activeActivity && activeMonthIndex !== null && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div 
+            ref={modalContainerRef}
             style={{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }}
             className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden border border-slate-200 relative animate-in zoom-in-95 duration-200"
           >
@@ -922,6 +968,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
       {previewModalOpen && previewFile && (
         <div className="fixed inset-0 bg-slate-950/95 flex items-center justify-center z-[10001] p-4 backdrop-blur-xl animate-in fade-in duration-300">
            <div 
+             ref={previewModalContainerRef}
              style={{ transform: `translate(${previewModalPos.x}px, ${previewModalPos.y}px)` }}
              className="bg-white rounded-[2rem] shadow-2xl w-[95%] max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-white/10 animate-in zoom-in-95 duration-200"
            >
