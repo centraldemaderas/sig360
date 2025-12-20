@@ -8,7 +8,10 @@
   },
   "scripts": {
     "dev": "npx serve .",
-    "build": "./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* && cp index.html metadata.json dist/ && node post-build.js",
+    "build:prepare": "node scripts/prepare-dist.mjs",
+    "build": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/*",
+    "build:watch": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --watch",
+    "preview": "concurrently -k -n BUILD,SERVER -c magenta,cyan \"npm run build:watch\" \"npm start\"",
     "start": "node server.js"
   },
   "dependencies": {
@@ -24,6 +27,7 @@
     "serve": "14.2.3"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "typescript": "5.7.2"
   }
 }
