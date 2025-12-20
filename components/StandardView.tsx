@@ -11,6 +11,8 @@ import {
   Loader2, TableProperties
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import { USE_CLOUD_DB, storage } from '../firebaseConfig';
+import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage';
 import * as XLSX from 'xlsx';
 
 interface StandardViewProps {
@@ -67,6 +69,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [previewFile, setPreviewFile] = useState<{url: string, name: string, blobUrl?: string} | null>(null);
   const [excelPreview, setExcelPreview] = useState<string | null>(null);
   const [docxPreview, setDocxPreview] = useState<string | null>(null);
+  const [odtPreview, setOdtPreview] = useState<string | null>(null);
   const [pptxPreviewBuffer, setPptxPreviewBuffer] = useState<ArrayBuffer | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -287,6 +290,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsPreviewLoading(true);
     setExcelPreview(null);
     setDocxPreview(null);
+    setOdtPreview(null);
     setPptxPreviewBuffer(null);
     setPreviewError(null);
     setPreviewModalPos(getInitialModalOffset()); // Reset position when opening
@@ -353,6 +357,57 @@ export const StandardView: React.FC<StandardViewProps> = ({
       } catch (e) {
         console.error("Error renderizando DOCX:", e);
         setPreviewError('No se pudo renderizar este documento Word. Intenta descargarlo y abrirlo con una aplicación externa.');
+      }
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    // OpenDocument (ODT) preview (basic text rendering)
+    if (lowerName.endsWith('.odt')) {
+      try {
+        const { default: JSZip } = await import('jszip');
+        const escapeHtml = (s: string) =>
+          s
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+
+        const ab = resolvedArrayBuffer ?? (await (await fetch(resolvedBlobUrl)).arrayBuffer());
+        const zip = await JSZip.loadAsync(ab);
+        const contentFile = zip.file('content.xml');
+        if (!contentFile) {
+          setPreviewError('No se encontró content.xml en el archivo ODT.');
+          setIsPreviewLoading(false);
+          return;
+        }
+        const xml = await contentFile.async('string');
+        const parsed = new DOMParser().parseFromString(xml, 'text/xml');
+        const nodes = Array.from(parsed.querySelectorAll('text\\:h, text\\:p'));
+        const textLines = nodes
+          .map((n) => (n.textContent || '').trim())
+          .filter(Boolean);
+
+        if (textLines.length === 0) {
+          setPreviewError('Este ODT no contiene texto previsualizable (o está muy estructurado). Intenta descargarlo.');
+          setIsPreviewLoading(false);
+          return;
+        }
+
+        const html = `
+          <style>
+            .odt-preview { font-family: 'Inter', sans-serif; color: #0f172a; }
+            .odt-preview p { line-height: 1.7; margin: 0.6rem 0; font-size: 14px; }
+          </style>
+          <div class="odt-preview">
+            ${textLines.map((t) => `<p>${escapeHtml(t)}</p>`).join('')}
+          </div>
+        `;
+        setOdtPreview(html);
+      } catch (e) {
+        console.error('Error renderizando ODT:', e);
+        setPreviewError('No se pudo renderizar este ODT. Intenta descargarlo y abrirlo con una aplicación externa.');
       }
       setIsPreviewLoading(false);
       return;
@@ -453,6 +508,34 @@ export const StandardView: React.FC<StandardViewProps> = ({
     const activityToUpdate = activities.find(a => a.id === activeActivityId);
     if (!activityToUpdate) return;
 
+    // IMPORTANT (Cloud): Firestore has a ~1MB document limit. Base64 data URLs for DOCX/PPTX often exceed it,
+    // causing the update to fail and the UI to "revert" after snapshots refresh. For FILE uploads in cloud mode,
+    // upload the data_url to Firebase Storage and persist only the downloadURL in Firestore.
+    let persistedData = data;
+    try {
+      if (
+        type === 'FILE' &&
+        USE_CLOUD_DB &&
+        storage &&
+        typeof data === 'string' &&
+        data.startsWith('data:')
+      ) {
+        const safeName = String(name || 'documento')
+          .trim()
+          .replaceAll(/[^\w.\-]+/g, '_')
+          .slice(0, 120);
+        const path = `evidence/${activeActivityId}/${currentYear}/${activeMonthIndex}/${Date.now()}_${safeName}`;
+        const r = storageRef(storage, path);
+        await uploadString(r, data, 'data_url');
+        persistedData = await getDownloadURL(r);
+      }
+    } catch (e) {
+      console.error('Error subiendo evidencia a Storage:', e);
+      setIsSaving(false);
+      alert('No se pudo subir el archivo a la nube. Intenta de nuevo (posible problema de permisos o conexión).');
+      return;
+    }
+
     const currentPlans = activityToUpdate.plans || {};
     let currentYearPlan = [...(currentPlans[currentYear] || [])];
     
@@ -476,7 +559,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     };
 
     const newEvidence: Evidence = {
-      url: data,
+      url: persistedData,
       type: type,
       fileName: name || (type === 'LINK' ? 'Enlace Biblioteca SIG' : 'Documento'),
       uploadedBy: currentUser.name,
@@ -1174,6 +1257,18 @@ export const StandardView: React.FC<StandardViewProps> = ({
                           </div>
                         </div>
                         <div className="max-w-4xl mx-auto" dangerouslySetInnerHTML={{ __html: docxPreview }} />
+                      </div>
+                    ) : odtPreview ? (
+                      /* CASO: ODT RENDERIZADO */
+                      <div className="w-full h-full bg-white overflow-auto p-10 scrollbar-thin animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center gap-3 mb-8 p-4 bg-blue-50 text-blue-700 border border-blue-200 rounded-2xl max-w-fit shadow-sm">
+                          <FileText size={24} />
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Vista Documento ODT</p>
+                            <p className="text-[8px] opacity-70 font-bold uppercase tracking-tighter">Extracción de texto (básica)</p>
+                          </div>
+                        </div>
+                        <div className="max-w-4xl mx-auto" dangerouslySetInnerHTML={{ __html: odtPreview }} />
                       </div>
                     ) : pptxPreviewBuffer ? (
                       /* CASO: PPTX RENDERIZADO */
