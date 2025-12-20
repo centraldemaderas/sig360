@@ -869,7 +869,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     <button onClick={() => handleAdminVerification('REJECTED')} className="py-5 bg-white hover:bg-orange-50 text-orange-700 rounded-2xl text-[10px] font-black uppercase border-2 border-orange-100 transition-all flex items-center justify-center gap-2 active:scale-95">
                       <X size={18} /> Rechazar Hallazgo
                     </button>
-                    <button onClick={() => handleAdminVerification('APPROVED')} className="py-5 bg-slate-900 hover:bg-black text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95">
+                    <button onClick={() => handleAdminVerification('APPROVED')} className="py-5 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-green-200/60 transition-all flex items-center justify-center gap-2 active:scale-95">
                       <BadgeCheck size={18} /> Validar Cumplimiento
                     </button>
                   </div>
