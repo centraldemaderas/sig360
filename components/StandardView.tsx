@@ -89,6 +89,21 @@ export const StandardView: React.FC<StandardViewProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * When the sidebar is visible, "center of viewport" can visually land under it.
+   * Compensate initial modal X by half the sidebar width so the modal opens centered
+   * within the remaining content area (matches expected UX in screenshots).
+   */
+  const getInitialModalOffset = () => {
+    try {
+      const sidebar = document.querySelector('aside') as HTMLElement | null;
+      const sidebarWidth = sidebar?.getBoundingClientRect().width ?? 0;
+      return { x: Math.round(sidebarWidth / 2), y: 0 };
+    } catch {
+      return { x: 0, y: 0 };
+    }
+  };
+
   useEffect(() => {
     const unsub = dataService.subscribeToPlants(data => setPlants(data));
     return () => unsub();
@@ -209,7 +224,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(false);
     setUploadTab('FILE');
     setExternalUrl('');
-    setModalPos({ x: 0, y: 0 }); 
+    setModalPos(getInitialModalOffset());
     setShowLibraryPicker(false);
     setCurrentFolderPath(['root']);
   };
@@ -222,7 +237,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const openPreview = async (url: string, name: string) => {
     setIsPreviewLoading(true);
     setExcelPreview(null);
-    setPreviewModalPos({ x: 0, y: 0 }); // Reset position when opening
+    setPreviewModalPos(getInitialModalOffset()); // Reset position when opening
     const bUrl = createBlobUrl(url);
     setPreviewFile({ url, name, blobUrl: bUrl });
     setPreviewModalOpen(true);
