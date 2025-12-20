@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
+import { init as initPptxPreviewer } from 'pptx-preview';
 
 interface StandardViewProps {
   standard: string;
