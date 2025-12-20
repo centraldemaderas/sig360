@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import * as XLSX from 'xlsx';
-import mammoth from 'mammoth';
-import { init as initPptxPreviewer } from 'pptx-preview';
 
 interface StandardViewProps {
   standard: string;
@@ -68,6 +66,9 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [externalUrl, setExternalUrl] = useState('');
   const [previewFile, setPreviewFile] = useState<{url: string, name: string, blobUrl?: string} | null>(null);
   const [excelPreview, setExcelPreview] = useState<string | null>(null);
+  const [docxPreview, setDocxPreview] = useState<string | null>(null);
+  const [pptxPreviewBuffer, setPptxPreviewBuffer] = useState<ArrayBuffer | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // Sincronizar norma seleccionada cuando cambia desde el padre (sidebar)
@@ -90,6 +91,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const previewDragRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
   const previewModalContainerRef = useRef<HTMLDivElement>(null);
+  const pptxWrapperRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -284,17 +286,96 @@ export const StandardView: React.FC<StandardViewProps> = ({
   const openPreview = async (url: string, name: string) => {
     setIsPreviewLoading(true);
     setExcelPreview(null);
+    setDocxPreview(null);
+    setPptxPreviewBuffer(null);
+    setPreviewError(null);
     setPreviewModalPos(getInitialModalOffset()); // Reset position when opening
-    const bUrl = createBlobUrl(url);
-    setPreviewFile({ url, name, blobUrl: bUrl });
+    const initialBlobUrl = createBlobUrl(url);
+    setPreviewFile({ url, name, blobUrl: undefined });
     setPreviewModalOpen(true);
 
-    // Motor de Previsualización de Excel
-    if (name.toLowerCase().endsWith('.xlsx') || name.toLowerCase().endsWith('.xls')) {
+    const lowerName = name.toLowerCase();
+    const isHttpUrl = /^https?:\/\//i.test(initialBlobUrl);
+
+    // Resolve external links to a real Blob URL when possible.
+    // This prevents the viewer from accidentally embedding login HTML pages (e.g. OneDrive/SharePoint or our own app)
+    // when the URL is not a direct file.
+    let resolvedBlobUrl = initialBlobUrl;
+    let resolvedArrayBuffer: ArrayBuffer | null = null;
+    let resolvedContentType: string | null = null;
+
+    if (isHttpUrl) {
       try {
-        const response = await fetch(bUrl);
-        const arrayBuffer = await response.arrayBuffer();
-        const data = new Uint8Array(arrayBuffer);
+        const resp = await fetch(initialBlobUrl);
+        resolvedContentType = resp.headers.get('content-type');
+        resolvedArrayBuffer = await resp.arrayBuffer();
+
+        // Many file-sharing links return HTML (login/preview pages). We can't safely embed those.
+        if (resolvedContentType && resolvedContentType.toLowerCase().includes('text/html')) {
+          setPreviewError('Este enlace no es un archivo directo (requiere autenticación o es una página web). Ábrelo en una pestaña nueva o descarga el archivo.');
+          setPreviewFile({ url, name, blobUrl: undefined });
+          setIsPreviewLoading(false);
+          return;
+        }
+
+        const blob = new Blob([resolvedArrayBuffer], { type: resolvedContentType || undefined });
+        resolvedBlobUrl = URL.createObjectURL(blob);
+      } catch (e) {
+        console.error('Error resolviendo enlace externo para previsualización:', e);
+        setPreviewError('No se pudo previsualizar este enlace (posible restricción de CORS o autenticación). Ábrelo en una pestaña nueva o descarga el archivo.');
+        setPreviewFile({ url, name, blobUrl: undefined });
+        setIsPreviewLoading(false);
+        return;
+      }
+    }
+
+    // Update the viewer to always use a blob-backed URL when available.
+    setPreviewFile({ url, name, blobUrl: resolvedBlobUrl });
+
+    // Word (DOCX) preview
+    if (lowerName.endsWith('.docx')) {
+      try {
+        const { default: mammoth } = await import('mammoth');
+        const ab = resolvedArrayBuffer ?? (await (await fetch(resolvedBlobUrl)).arrayBuffer());
+        const result = await mammoth.convertToHtml({ arrayBuffer: ab });
+        const styledHtml = `
+          <style>
+            .docx-preview { font-family: 'Inter', sans-serif; color: #0f172a; }
+            .docx-preview h1, .docx-preview h2, .docx-preview h3 { font-weight: 900; }
+            .docx-preview p { line-height: 1.65; margin: 0.65rem 0; }
+            .docx-preview table { width: 100%; border-collapse: collapse; }
+            .docx-preview td, .docx-preview th { border: 1px solid #e2e8f0; padding: 10px; vertical-align: top; }
+            .docx-preview img { max-width: 100%; height: auto; }
+          </style>
+          <div class="docx-preview">${result.value}</div>
+        `;
+        setDocxPreview(styledHtml);
+      } catch (e) {
+        console.error("Error renderizando DOCX:", e);
+        setPreviewError('No se pudo renderizar este documento Word. Intenta descargarlo y abrirlo con una aplicación externa.');
+      }
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    // PowerPoint (PPTX) preview
+    if (lowerName.endsWith('.pptx')) {
+      try {
+        const ab = resolvedArrayBuffer ?? (await (await fetch(resolvedBlobUrl)).arrayBuffer());
+        setPptxPreviewBuffer(ab);
+      } catch (e) {
+        console.error("Error preparando PPTX:", e);
+        setPreviewError('No se pudo renderizar esta presentación. Intenta descargarla y abrirla con una aplicación externa.');
+      }
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    // Motor de Previsualización de Excel
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      try {
+        const ab = resolvedArrayBuffer ?? (await (await fetch(resolvedBlobUrl)).arrayBuffer());
+        const data = new Uint8Array(ab);
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
@@ -314,10 +395,38 @@ export const StandardView: React.FC<StandardViewProps> = ({
         setExcelPreview(styledHtml);
       } catch (e) {
         console.error("Error renderizando Excel:", e);
+        setPreviewError('No se pudo renderizar este archivo Excel. Intenta descargarlo y abrirlo con una aplicación externa.');
       }
     }
     setIsPreviewLoading(false);
   };
+
+  // Render PPTX into wrapper when available
+  useEffect(() => {
+    if (!previewModalOpen) return;
+    if (!pptxPreviewBuffer) return;
+    if (!pptxWrapperRef.current) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { init: initPptxPreviewer } = await import('pptx-preview');
+        if (cancelled || !pptxWrapperRef.current) return;
+        pptxWrapperRef.current.innerHTML = '';
+        const w = Math.max(720, Math.min(1100, pptxWrapperRef.current.clientWidth || 960));
+        const h = Math.round(w * 9 / 16);
+        const previewer = initPptxPreviewer(pptxWrapperRef.current, { width: w, height: h, mode: 'slide' });
+        previewer.preview(pptxPreviewBuffer);
+      } catch (e) {
+        console.error('Error renderizando PPTX:', e);
+        setPreviewError('No se pudo renderizar esta presentación en el navegador.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewModalOpen, pptxPreviewBuffer]);
 
   // Limpieza de Blob URLs para evitar fugas de memoria
   useEffect(() => {
@@ -1015,6 +1124,33 @@ export const StandardView: React.FC<StandardViewProps> = ({
                          <Loader2 size={64} className="mx-auto text-blue-500 animate-spin" />
                          <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Preparando visualización segura...</p>
                       </div>
+                    ) : previewError ? (
+                      /* CASO: Error / enlace no previsualizable (evita mostrar páginas de login) */
+                      <div className="w-full h-full flex items-center justify-center p-10">
+                        <div className="max-w-xl w-full bg-white/5 rounded-[2.5rem] backdrop-blur-md border border-white/10 p-10 text-center space-y-6">
+                          <div className="p-6 bg-blue-600/15 text-blue-300 rounded-full inline-block shadow-2xl">
+                            <ExternalLink size={56} />
+                          </div>
+                          <div className="space-y-2">
+                            <h4 className="text-lg font-black text-white uppercase tracking-tight">No se pudo previsualizar</h4>
+                            <p className="text-xs text-slate-300 font-medium leading-relaxed">{previewError}</p>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => window.open(previewFile.url, '_blank')}
+                              className="flex-1 px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/30 active:scale-95"
+                            >
+                              Abrir en pestaña nueva
+                            </button>
+                            <button
+                              onClick={() => handleDownload(previewFile.url, previewFile.name)}
+                              className="flex-1 px-6 py-4 bg-white text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-2xl hover:bg-slate-100 active:scale-95"
+                            >
+                              Descargar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     ) : excelPreview ? (
                       /* CASO: EXCEL RENDERIZADO */
                       <div className="w-full h-full bg-white overflow-auto p-10 scrollbar-thin animate-in slide-in-from-bottom-4 duration-500">
@@ -1026,6 +1162,30 @@ export const StandardView: React.FC<StandardViewProps> = ({
                             </div>
                          </div>
                          <div className="overflow-x-auto shadow-2xl rounded-xl border border-slate-100" dangerouslySetInnerHTML={{ __html: excelPreview }} />
+                      </div>
+                    ) : docxPreview ? (
+                      /* CASO: DOCX RENDERIZADO */
+                      <div className="w-full h-full bg-white overflow-auto p-10 scrollbar-thin animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center gap-3 mb-8 p-4 bg-blue-50 text-blue-700 border border-blue-200 rounded-2xl max-w-fit shadow-sm">
+                          <FileText size={24} />
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Vista Documento Word</p>
+                            <p className="text-[8px] opacity-70 font-bold uppercase tracking-tighter">Conversión segura a HTML</p>
+                          </div>
+                        </div>
+                        <div className="max-w-4xl mx-auto" dangerouslySetInnerHTML={{ __html: docxPreview }} />
+                      </div>
+                    ) : pptxPreviewBuffer ? (
+                      /* CASO: PPTX RENDERIZADO */
+                      <div className="w-full h-full bg-white overflow-auto p-8 scrollbar-thin animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center gap-3 mb-6 p-4 bg-blue-50 text-blue-700 border border-blue-200 rounded-2xl max-w-fit shadow-sm">
+                          <Monitor size={24} />
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Vista Presentación PowerPoint</p>
+                            <p className="text-[8px] opacity-70 font-bold uppercase tracking-tighter">Renderizado en navegador</p>
+                          </div>
+                        </div>
+                        <div ref={pptxWrapperRef} className="w-full flex justify-center" />
                       </div>
                     ) : previewFile.url.startsWith('sig-internal-lib://') ? (
                       /* Caso: Documento de Biblioteca Interna */

@@ -10,8 +10,8 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "dev:legacy-static": "npx serve .",
     "build:prepare": "node scripts/prepare-dist.mjs",
-    "build": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/*",
-    "build:watch": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --watch",
+    "build": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --splitting --chunk-names=chunks/[name]-[hash] --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/*",
+    "build:watch": "npm run build:prepare && ./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --splitting --chunk-names=chunks/[name]-[hash] --jsx=automatic --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --watch",
     "preview": "concurrently -k -n BUILD,SERVER -c magenta,cyan \"npm run build:watch\" \"npm start\"",
     "start": "node server.js"
   },
