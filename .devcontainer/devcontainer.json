@@ -2,11 +2,11 @@
   "name": "sig360",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "postCreateCommand": "npm ci",
-  "postStartCommand": "bash -lc 'if [ ! -d node_modules ]; then npm ci; fi; (nohup npm run preview >/tmp/preview.log 2>&1 &)'",
-  "forwardPorts": [8080],
+  "postStartCommand": "bash -lc 'if [ ! -d node_modules ]; then npm ci; fi; (nohup npm run dev -- --strictPort >/tmp/dev.log 2>&1 &)'",
+  "forwardPorts": [3000],
   "portsAttributes": {
-    "8080": {
-      "label": "SIG360 Preview",
+    "3000": {
+      "label": "SIG360 Dev (Vite HMR)",
       "onAutoForward": "openBrowser"
     }
   }
