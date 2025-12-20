@@ -970,7 +970,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
            <div 
              ref={previewModalContainerRef}
              style={{ transform: `translate(${previewModalPos.x}px, ${previewModalPos.y}px)` }}
-             className="bg-white rounded-[2rem] shadow-2xl w-[92%] max-w-4xl h-[72vh] flex flex-col overflow-hidden border border-white/10 animate-in zoom-in-95 duration-200"
+             className="bg-white rounded-[2rem] shadow-2xl w-[86%] max-w-3xl h-[72vh] flex flex-col overflow-hidden border border-white/10 animate-in zoom-in-95 duration-200"
            >
               {/* Header del Visor Arrastrable */}
               <div 
