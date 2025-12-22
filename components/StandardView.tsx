@@ -224,7 +224,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
 
       const lowerName = name.toLowerCase();
 
-      // Motor Excel
       if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
         try {
           const response = await fetch(bUrl);
@@ -240,7 +239,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
           console.error("Error renderizando Excel:", e);
         }
       } 
-      // Motor Word (Mammoth.js)
       else if (lowerName.endsWith('.docx')) {
         try {
           const response = await fetch(bUrl);
