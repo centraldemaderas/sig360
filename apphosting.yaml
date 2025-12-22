@@ -2,7 +2,7 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  buildCommand: npm ci && npm run build
+  buildCommand: npm install && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1

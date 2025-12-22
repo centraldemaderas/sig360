@@ -6,7 +6,7 @@ import { AlertCircle, CheckCircle, Clock, ExternalLink, RefreshCw, Search, Shiel
 interface EvidenceDashboardProps {
   activities: Activity[];
   currentUser: User;
-  onUpdateActivity: (activity: Activity) => Promise<void>;
+  onUpdateActivity: (activity: Activity) => void;
 }
 
 interface EvidenceItem {

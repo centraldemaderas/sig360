@@ -9,9 +9,7 @@ export const firebaseConfig = {
   apiKey: "AIzaSyAW1PT30nPjdn5SqN2o2TX_O0CXkCFHxwg",
   authDomain: "sig360-35d17.firebaseapp.com",
   projectId: "sig360-35d17",
-  // `storageBucket` debe ser el nombre del bucket (no un dominio).
-  // El formato típico es `<project-id>.appspot.com`.
-  storageBucket: "sig360-35d17.appspot.com",
+  storageBucket: "sig360-35d17.firebasestorage.app",
   messagingSenderId: "625926676036",
   appId: "1:625926676036:web:ac1cd4d96b3fe5ec85e611",
   measurementId: "G-P2QLX4QXKQ"

@@ -1,4 +1,4 @@
-// SIG-Manager Pro v1.6.5 - Cloud Deployment Ready
+// SIG-Manager Pro v1.6.8 - Cloud Deployment Ready
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
