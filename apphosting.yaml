@@ -2,8 +2,8 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # Usamos npm install para que sea menos estricto con el lockfile manual
-  buildCommand: npm install && npm run build
+  # Usamos npm ci para garantizar que el build coincide exactamente con el lockfile
+  buildCommand: npm ci && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1
