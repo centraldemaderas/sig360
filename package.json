@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "npx serve .",
-    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --external:xlsx --external:pdfjs-dist --external:mammoth && cp index.html metadata.json dist/ && node post-build.js",
+    "build": "./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --external:xlsx --external:pdfjs-dist --external:mammoth && cp index.html metadata.json dist/ && node post-build.js",
     "start": "node server.js"
   },
   "dependencies": {
@@ -18,13 +18,13 @@
     "recharts": "2.15.4",
     "firebase": "11.0.2",
     "express": "4.22.1",
+    "esbuild": "0.24.2",
     "xlsx": "0.18.5",
     "pdfjs-dist": "4.10.38",
     "mammoth": "1.8.0",
     "serve": "14.2.3"
   },
   "devDependencies": {
-    "esbuild": "0.24.2",
     "typescript": "5.7.2"
   }
 }
