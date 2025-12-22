@@ -98,6 +98,20 @@ export const StandardView: React.FC<StandardViewProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+    let timeoutId: number | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(() => {
+        reject(new Error(`TIMEOUT:${label}:${ms}`));
+      }, ms);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    }
+  };
+
   /**
    * When the sidebar is visible, "center of viewport" can visually land under it.
    * Compensate initial modal X by half the sidebar width so the modal opens centered
@@ -513,6 +527,7 @@ export const StandardView: React.FC<StandardViewProps> = ({
     setIsSaving(true);
 
     try {
+      const startedAt = Date.now();
       const activityToUpdate = activities.find(a => a.id === activeActivityId);
       if (!activityToUpdate) {
         throw new Error('Actividad no encontrada (posible actualización de datos en segundo plano).');
@@ -537,8 +552,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
           .slice(0, 120);
         const path = `evidence/${activeActivityId}/${currentYear}/${activeMonthIndex}/${Date.now()}_${safeName}`;
         const r = storageRef(storage, path);
-        await uploadString(r, data, 'data_url');
-        persistedData = await getDownloadURL(r);
+        await withTimeout(uploadString(r, data, 'data_url'), 60_000, 'storage:uploadString');
+        persistedData = await withTimeout(getDownloadURL(r), 30_000, 'storage:getDownloadURL');
       }
 
       const currentPlans = activityToUpdate.plans || {};
@@ -588,14 +603,18 @@ export const StandardView: React.FC<StandardViewProps> = ({
         plans: { ...currentPlans, [currentYear]: currentYearPlan } 
       };
 
-      await onUpdateActivity(updatedActivity);
+      await withTimeout(Promise.resolve(onUpdateActivity(updatedActivity)), 30_000, 'activity:update');
+      console.log(`✅ Evidencia guardada en ${Date.now() - startedAt}ms`);
     } catch (e) {
       // Esto evita el "loading infinito" cuando Storage/Firestore/localStorage falla.
       console.error('Error guardando evidencia:', e);
-      const msg =
-        USE_CLOUD_DB
+      const raw = String((e as any)?.message || e);
+      const timedOut = raw.startsWith('TIMEOUT:');
+      const msg = timedOut
+        ? 'La carga tardó demasiado y se canceló (timeout). Revisa tu conexión o permisos de Firebase y vuelve a intentar.'
+        : (USE_CLOUD_DB
           ? 'No se pudo guardar la evidencia en la nube. Revisa permisos de Storage/Firestore y tu conexión.'
-          : 'No se pudo guardar la evidencia localmente (posible límite de almacenamiento del navegador).';
+          : 'No se pudo guardar la evidencia localmente (posible límite de almacenamiento del navegador).');
       alert(msg);
     } finally {
       setIsSaving(false);
