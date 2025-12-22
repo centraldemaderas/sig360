@@ -7,43 +7,52 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-// Google Cloud Run/App Hosting inyecta la variable de entorno PORT (normalmente 8080)
-const PORT = process.env.PORT || 8080;
-const HOST = '0.0.0.0'; // Esencial para entornos de contenedor
+
+// Configuración de red para Cloud Run
+const PORT = parseInt(process.env.PORT, 10) || 8080;
+const HOST = '0.0.0.0';
 
 const distPath = path.join(__dirname, 'dist');
 
-console.log('--- SIG-Manager Pro Startup ---');
-console.log(`Port: ${PORT}`);
-console.log(`Target Directory: ${distPath}`);
+console.log(`[SIG-SERVER] Iniciando en puerto ${PORT}...`);
 
-// Servir archivos estáticos
-if (fs.existsSync(distPath)) {
-  console.log('✅ Directory "dist" found. Serving static files.');
-  app.use(express.static(distPath));
-} else {
-  console.warn('⚠️ WARNING: "dist" directory not found. The app might not have been built correctly.');
-}
+// Middleware para logging básico
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
-// Ruta de salud para el balanceador de carga de Google
+// Ruta de Salud (Vital para que el balanceador de Google marque el contenedor como "Healthy")
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// Redirección SPA: Cualquier ruta que no sea un archivo va al index.html
+// Servir archivos de la carpeta dist si existe
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  console.log('[SIG-SERVER] Directorio /dist detectado y servido.');
+} else {
+  console.error('[SIG-SERVER] ERROR: Directorio /dist NO encontrado. Revisa el build log.');
+}
+
+// Redirección SPA para soportar navegación de React
 app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send('Application not found. Please check build logs.');
+    res.status(404).send('La aplicación no está lista o el build falló. Por favor, revisa los logs de compilación.');
   }
 });
 
+// Iniciar servidor
 const server = app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server listening on http://${HOST}:${PORT}`);
+  console.log(`🚀 [SIG-SERVER] Servidor listo y escuchando en http://${HOST}:${PORT}`);
 });
 
-// Manejo de errores de inicio de servidor
-server.on('error', (err) => {
-  console.error('❌ FATAL ERROR STARTING SERVER:', err);
-  process.exit(1);
+// Captura de errores globales para evitar que el contenedor muera sin dejar rastro
+process.on('uncaughtException', (err) => {
+  console.error('[SIG-SERVER] CRASH NO CONTROLADO:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[SIG-SERVER] PROMESA NO CONTROLADA:', reason);
 });
