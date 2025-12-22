@@ -2,8 +2,8 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # App Hosting buildpacks standard installation
-  buildCommand: npm install --no-audit --no-fund && npm run build
+  # Usamos npm install para que sea menos estricto con el lockfile manual
+  buildCommand: npm install && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1
