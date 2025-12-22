@@ -2,7 +2,7 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # npm ci garantiza que el despliegue sea 100% reproducible y coincida con el lockfile
+  # Comando optimizado: garantiza que el entorno de build sea idéntico al de desarrollo
   buildCommand: npm ci && npm run build
 runConfig:
   runCommand: npm start
