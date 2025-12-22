@@ -13,8 +13,9 @@ import { PlantManager } from './components/PlantManager';
 import { AreaManager } from './components/AreaManager';
 import { Activity, User, StandardDefinition, Plant, Area } from './types';
 import { dataService } from './services/dataService';
-import { USE_CLOUD_DB } from './firebaseConfig';
+import { USE_CLOUD_DB, auth } from './firebaseConfig';
 import { Database, Loader2 } from 'lucide-react';
+import { signInAnonymously } from 'firebase/auth';
 
 /**
  * SIG-Manager Pro - Arquitectura Modularizada
@@ -54,6 +55,14 @@ function App() {
     const safetyTimer = setTimeout(() => {
       setLoadingStates(prev => Object.keys(prev).reduce((acc, k) => ({...acc, [k]: false}), {} as any));
     }, 10000);
+
+    // Asegura sesión Firebase (necesario para reglas default de Firestore/Storage).
+    // Esto NO interfiere con el login interno del sistema (usuarios SIG).
+    if (USE_CLOUD_DB && auth && !auth.currentUser) {
+      signInAnonymously(auth).catch((e) => {
+        console.error('❌ Firebase Auth (anónimo) falló:', e);
+      });
+    }
 
     const unsubscribes = [
       dataService.subscribeToActivities(

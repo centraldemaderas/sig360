@@ -525,10 +525,12 @@ export const StandardView: React.FC<StandardViewProps> = ({
       if (
         type === 'FILE' &&
         USE_CLOUD_DB &&
-        storage &&
         typeof data === 'string' &&
         data.startsWith('data:')
       ) {
+        if (!storage) {
+          throw new Error('Firebase Storage no está disponible. Revisa la configuración del bucket/permisos.');
+        }
         const safeName = String(name || 'documento')
           .trim()
           .replaceAll(/[^\w.\-]+/g, '_')
