@@ -1096,7 +1096,6 @@ export const StandardView: React.FC<StandardViewProps> = ({
                     </div>
                   </div>
                 </div>
-
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 flex flex-col shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-red-600/5 rounded-full -translate-y-12 translate-x-12"></div>
                   <div className="flex items-center gap-4 mb-8">
