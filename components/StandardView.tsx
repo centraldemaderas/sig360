@@ -19,7 +19,7 @@ interface StandardViewProps {
   standard: string;
   activities: Activity[];
   areas: Area[];
-  onUpdateActivity: (activity: Activity) => void;
+  onUpdateActivity: (activity: Activity) => Promise<void>;
   currentYear: number;
   setCurrentYear: (year: number) => void;
   currentUser: User;
@@ -503,16 +503,25 @@ export const StandardView: React.FC<StandardViewProps> = ({
   };
 
   const handleEvidenceSubmit = async (type: 'FILE' | 'LINK', data: string, name?: string) => {
-    if (!activeActivityId || activeMonthIndex === null) return;
-    setIsSaving(true);
-    const activityToUpdate = activities.find(a => a.id === activeActivityId);
-    if (!activityToUpdate) return;
+    // Nota: `FileReader.onloadstart` activa `isSaving`. Si por cualquier razón faltan IDs aquí,
+    // igual debemos apagar el spinner para evitar "cargando infinito".
+    if (!activeActivityId || activeMonthIndex === null) {
+      setIsSaving(false);
+      return;
+    }
 
-    // IMPORTANT (Cloud): Firestore has a ~1MB document limit. Base64 data URLs for DOCX/PPTX often exceed it,
-    // causing the update to fail and the UI to "revert" after snapshots refresh. For FILE uploads in cloud mode,
-    // upload the data_url to Firebase Storage and persist only the downloadURL in Firestore.
-    let persistedData = data;
+    setIsSaving(true);
+
     try {
+      const activityToUpdate = activities.find(a => a.id === activeActivityId);
+      if (!activityToUpdate) {
+        throw new Error('Actividad no encontrada (posible actualización de datos en segundo plano).');
+      }
+
+      // IMPORTANT (Cloud): Firestore has a ~1MB document limit. Base64 data URLs for DOCX/PPTX often exceed it,
+      // causing the update to fail and the UI to "revert" after snapshots refresh. For FILE uploads in cloud mode,
+      // upload the data_url to Firebase Storage and persist only the downloadURL in Firestore.
+      let persistedData = data;
       if (
         type === 'FILE' &&
         USE_CLOUD_DB &&
@@ -529,90 +538,114 @@ export const StandardView: React.FC<StandardViewProps> = ({
         await uploadString(r, data, 'data_url');
         persistedData = await getDownloadURL(r);
       }
-    } catch (e) {
-      console.error('Error subiendo evidencia a Storage:', e);
-      setIsSaving(false);
-      alert('No se pudo subir el archivo a la nube. Intenta de nuevo (posible problema de permisos o conexión).');
-      return;
-    }
 
-    const currentPlans = activityToUpdate.plans || {};
-    let currentYearPlan = [...(currentPlans[currentYear] || [])];
+      const currentPlans = activityToUpdate.plans || {};
+      let currentYearPlan = [...(currentPlans[currentYear] || [])];
     
-    if (currentYearPlan.length === 0) {
-      currentYearPlan = Array.from({ length: 12 }, (_, i) => ({
-        month: i, planned: false, executed: false, delayed: false
-      }));
+      if (currentYearPlan.length === 0) {
+        currentYearPlan = Array.from({ length: 12 }, (_, i) => ({
+          month: i, planned: false, executed: false, delayed: false
+        }));
+      }
+
+      if (!currentYearPlan[activeMonthIndex]) {
+        throw new Error('No se encontró el plan del mes seleccionado.');
+      }
+
+      const previousEvidence = currentYearPlan[activeMonthIndex].evidence;
+      const historyEntry: CommentLog = {
+        id: 'h-' + Date.now(),
+        text: previousEvidence?.status === 'REJECTED' 
+          ? `Re-carga de evidencia tras rechazo. Nueva versión: ${name || data}` 
+          : `Carga inicial de evidencia: ${name || data}`,
+        author: currentUser.name,
+        date: new Date().toLocaleString(),
+        status: 'PENDING',
+        fileUrl: previousEvidence?.url,
+        fileName: previousEvidence?.fileName
+      };
+
+      const newEvidence: Evidence = {
+        url: persistedData,
+        type: type,
+        fileName: name || (type === 'LINK' ? 'Enlace Biblioteca SIG' : 'Documento'),
+        uploadedBy: currentUser.name,
+        uploadedAt: new Date().toLocaleString(),
+        status: 'PENDING',
+        history: [historyEntry, ...(previousEvidence?.history || [])]
+      };
+
+      currentYearPlan[activeMonthIndex] = { 
+        ...currentYearPlan[activeMonthIndex], 
+        planned: true, 
+        evidence: newEvidence 
+      };
+
+      const updatedActivity: Activity = { 
+        ...activityToUpdate, 
+        plans: { ...currentPlans, [currentYear]: currentYearPlan } 
+      };
+
+      await onUpdateActivity(updatedActivity);
+    } catch (e) {
+      // Esto evita el "loading infinito" cuando Storage/Firestore/localStorage falla.
+      console.error('Error guardando evidencia:', e);
+      const msg =
+        USE_CLOUD_DB
+          ? 'No se pudo guardar la evidencia en la nube. Revisa permisos de Storage/Firestore y tu conexión.'
+          : 'No se pudo guardar la evidencia localmente (posible límite de almacenamiento del navegador).';
+      alert(msg);
+    } finally {
+      setIsSaving(false);
     }
-
-    const previousEvidence = currentYearPlan[activeMonthIndex].evidence;
-    const historyEntry: CommentLog = {
-      id: 'h-' + Date.now(),
-      text: previousEvidence?.status === 'REJECTED' 
-        ? `Re-carga de evidencia tras rechazo. Nueva versión: ${name || data}` 
-        : `Carga inicial de evidencia: ${name || data}`,
-      author: currentUser.name,
-      date: new Date().toLocaleString(),
-      status: 'PENDING',
-      fileUrl: previousEvidence?.url,
-      fileName: previousEvidence?.fileName
-    };
-
-    const newEvidence: Evidence = {
-      url: persistedData,
-      type: type,
-      fileName: name || (type === 'LINK' ? 'Enlace Biblioteca SIG' : 'Documento'),
-      uploadedBy: currentUser.name,
-      uploadedAt: new Date().toLocaleString(),
-      status: 'PENDING',
-      history: [historyEntry, ...(previousEvidence?.history || [])]
-    };
-
-    currentYearPlan[activeMonthIndex] = { 
-      ...currentYearPlan[activeMonthIndex], 
-      planned: true, 
-      evidence: newEvidence 
-    };
-
-    const updatedActivity: Activity = { 
-      ...activityToUpdate, 
-      plans: { ...currentPlans, [currentYear]: currentYearPlan } 
-    };
-    await onUpdateActivity(updatedActivity);
-    setIsSaving(false);
   };
 
   const handleAdminVerification = async (status: 'APPROVED' | 'REJECTED') => {
-    if (!activeActivityId || activeMonthIndex === null) return;
-    setIsSaving(true);
-    const activityToUpdate = activities.find(a => a.id === activeActivityId);
-    if (!activityToUpdate) return;
-    const currentYearPlan = [...(activityToUpdate.plans?.[currentYear] || [])];
-    const targetPlan = currentYearPlan[activeMonthIndex];
-    if (!targetPlan?.evidence) return;
-    
-    const newCommentEntry: CommentLog = {
-      id: `log-adm-${Date.now()}`,
-      text: adminComment || (status === 'APPROVED' ? 'Evidencia validada y aprobada.' : 'Evidencia rechazada por inconformidad.'),
-      author: currentUser.name,
-      date: new Date().toLocaleString(),
-      status: status
-    };
-    
-    const updatedEvidence: Evidence = {
-      ...targetPlan.evidence,
-      status: status,
-      adminComment: newCommentEntry.text,
-      approvedBy: status === 'APPROVED' ? currentUser.name : null as any,
-      rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
-      history: [newCommentEntry, ...targetPlan.evidence.history]
-    };
+    if (!activeActivityId || activeMonthIndex === null) {
+      setIsSaving(false);
+      return;
+    }
 
-    currentYearPlan[activeMonthIndex] = { ...targetPlan, evidence: updatedEvidence };
-    const updatedActivity: Activity = { ...activityToUpdate, plans: { ...(activityToUpdate.plans || {}), [currentYear]: currentYearPlan } };
-    await onUpdateActivity(updatedActivity);
-    setIsSaving(false);
-    setModalOpen(false);
+    setIsSaving(true);
+
+    try {
+      const activityToUpdate = activities.find(a => a.id === activeActivityId);
+      if (!activityToUpdate) {
+        throw new Error('Actividad no encontrada.');
+      }
+      const currentYearPlan = [...(activityToUpdate.plans?.[currentYear] || [])];
+      const targetPlan = currentYearPlan[activeMonthIndex];
+      if (!targetPlan?.evidence) {
+        throw new Error('No hay evidencia para validar en este mes.');
+      }
+    
+      const newCommentEntry: CommentLog = {
+        id: `log-adm-${Date.now()}`,
+        text: adminComment || (status === 'APPROVED' ? 'Evidencia validada y aprobada.' : 'Evidencia rechazada por inconformidad.'),
+        author: currentUser.name,
+        date: new Date().toLocaleString(),
+        status: status
+      };
+    
+      const updatedEvidence: Evidence = {
+        ...targetPlan.evidence,
+        status: status,
+        adminComment: newCommentEntry.text,
+        approvedBy: status === 'APPROVED' ? currentUser.name : null as any,
+        rejectionDate: status === 'REJECTED' ? new Date().toISOString() : null as any,
+        history: [newCommentEntry, ...targetPlan.evidence.history]
+      };
+
+      currentYearPlan[activeMonthIndex] = { ...targetPlan, evidence: updatedEvidence };
+      const updatedActivity: Activity = { ...activityToUpdate, plans: { ...(activityToUpdate.plans || {}), [currentYear]: currentYearPlan } };
+      await onUpdateActivity(updatedActivity);
+      setModalOpen(false);
+    } catch (e) {
+      console.error('Error guardando veredicto auditor:', e);
+      alert('No se pudo guardar el veredicto. Intenta de nuevo.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const selectLibraryFile = (file: any) => {
@@ -767,6 +800,8 @@ export const StandardView: React.FC<StandardViewProps> = ({
       };
       reader.readAsDataURL(file);
     }
+    // Permite volver a seleccionar el mismo archivo y evita estados extraños del input.
+    e.target.value = '';
   };
 
   return (
