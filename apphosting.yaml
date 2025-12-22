@@ -2,10 +2,8 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # App Hosting buildpacks sometimes fail `npm ci` with lockfile resolution issues.
-  # Use `npm install --include=dev` to reliably install build tooling (vite/typescript)
-  # even when NODE_ENV is production in the builder.
-  buildCommand: npm install --include=dev --no-audit --no-fund && npm run build
+  # App Hosting buildpacks standard installation
+  buildCommand: npm install --no-audit --no-fund && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1

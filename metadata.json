@@ -1,8 +1,8 @@
 {
   "name": "SIG-Manager Pro (Cloud Ready)",
   "description": "Sistema Integrado de Gestión Empresarial. Versión optimizada con visor de Word (.docx), Excel, PDF e Imágenes.",
-  "version": "1.6.9",
+  "version": "1.6.8",
   "status": "PRODUCTION_READY",
-  "developerNotes": "v1.6.9: Se integra Mammoth.js para el renderizado de archivos Word en el cliente. Se mejora el manejo de PowerPoint con UI dedicada para descarga segura. Se corrigen rutas de importmap para Cloud Build.",
+  "developerNotes": "v1.6.8: Se integra Mammoth.js para el renderizado de archivos Word en el cliente. Se mejora el manejo de PowerPoint con UI dedicada para descarga segura. Se corrigen rutas de importmap para Cloud Build.",
   "requestFramePermissions": []
 }
