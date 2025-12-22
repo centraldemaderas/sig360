@@ -2,7 +2,7 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # Usamos npm ci para garantizar que el build coincide exactamente con el lockfile
+  # Comando optimizado para Cloud Build: garantiza sincronización total con el lockfile
   buildCommand: npm ci && npm run build
 runConfig:
   runCommand: npm start
