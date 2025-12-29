@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "serve .",
-    "build": "./node_modules/esbuild/bin/esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --external:xlsx --external:pdfjs-dist --external:mammoth && cp index.html metadata.json dist/ && node post-build.js",
+    "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --external:xlsx --external:pdfjs-dist --external:mammoth && cp index.html metadata.json dist/ && node post-build.js",
     "start": "node server.js"
   },
   "dependencies": {

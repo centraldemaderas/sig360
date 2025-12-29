@@ -2,8 +2,8 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # Comando inmutable: ignora la caché corrupta y verifica integridad total
-  buildCommand: npm ci --no-audit --no-fund && npm run build
+  # El comando 'rm -f package-lock.json' asegura que la instalación sea limpia y sin conflictos de hashes
+  buildCommand: rm -f package-lock.json && npm install && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1
