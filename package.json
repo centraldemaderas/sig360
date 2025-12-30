@@ -1,28 +1,29 @@
 {
   "name": "sig-manager-pro",
-  "version": "1.6.8",
+  "version": "1.6.9",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
+    "preinstall": "rm -f package-lock.json node_modules/.package-lock.json",
     "dev": "serve .",
     "build": "esbuild index.tsx --bundle --outdir=dist --format=esm --jsx=automatic --minify --external:react --external:react-dom/* --external:lucide-react --external:recharts --external:firebase/* --external:xlsx --external:pdfjs-dist --external:mammoth && cp index.html metadata.json dist/ && node post-build.js",
     "start": "node server.js"
   },
   "dependencies": {
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "lucide-react": "0.460.0",
-    "recharts": "2.15.4",
-    "firebase": "11.0.2",
-    "express": "4.21.2",
-    "xlsx": "0.18.5",
-    "pdfjs-dist": "4.10.38",
-    "mammoth": "1.8.0",
-    "serve": "14.2.3",
-    "esbuild": "0.24.2",
-    "typescript": "5.7.2"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.460.0",
+    "recharts": "^2.15.4",
+    "firebase": "^11.0.2",
+    "express": "^4.21.2",
+    "xlsx": "^0.18.5",
+    "pdfjs-dist": "^4.10.38",
+    "mammoth": "^1.8.0",
+    "serve": "^14.2.3",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
   }
 }
