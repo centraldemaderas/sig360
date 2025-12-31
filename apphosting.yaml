@@ -2,8 +2,8 @@ kind: AppStack
 schemaVersion: v1
 buildConfig:
   runtime: nodejs20
-  # Forzamos la eliminacion del lockfile y una instalacion limpia ignorando scripts opcionales que puedan fallar
-  buildCommand: rm -f package-lock.json && npm install --no-package-lock --no-audit && npm run build
+  # El comando 'rm -f package-lock.json' asegura que la instalación sea limpia y sin conflictos de hashes
+  buildCommand: rm -f package-lock.json && npm install && npm run build
 runConfig:
   runCommand: npm start
   cpu: 1
